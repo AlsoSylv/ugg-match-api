@@ -1,5 +1,5 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use serde::{Serialize, Deserialize};
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,7 +61,7 @@ pub struct MatchSummary {
     pub win: bool,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LpInfo {
     #[serde(rename = "__typename")]
@@ -73,7 +73,7 @@ pub struct LpInfo {
     pub promoted_to: PromotedTo,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PromotedTo {
     #[serde(rename = "__typename")]
