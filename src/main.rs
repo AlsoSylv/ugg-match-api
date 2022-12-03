@@ -1,29 +1,31 @@
-use std::{str::FromStr, sync::mpsc::{Sender, Receiver}};
+use std::{str::FromStr, sync::mpsc::Sender};
 
 use chrono::{self, DateTime, NaiveDateTime, Utc};
+use eframe::egui;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::json;
-use eframe::egui;
 use tokio::runtime::Runtime;
+use ui::Results;
 
 mod structs;
+mod ui;
 
 /*
-    let mut roles = Vec::new();
-    let role_map = HashMap::from([
-        ("Top", 4),
-        ("Jungle", 1),
-        ("Mid", 5),
-        ("ADC", 3),
-        ("Support", 2),
-        ("None", 6),
-    ]);
-    let vec_roles: Vec<&str> = vec![];
-    for x in vec_roles {
-        roles.push(*(role_map.get(x).unwrap()))
-    }
-    request("xayah na", "na1", roles, 1).await;
- */
+   let mut roles = Vec::new();
+   let role_map = HashMap::from([
+       ("Top", 4),
+       ("Jungle", 1),
+       ("Mid", 5),
+       ("ADC", 3),
+       ("Support", 2),
+       ("None", 6),
+   ]);
+   let vec_roles: Vec<&str> = vec![];
+   for x in vec_roles {
+       roles.push(*(role_map.get(x).unwrap()))
+   }
+   request("xayah na", "na1", roles, 1).await;
+*/
 
 #[tokio::main]
 async fn main() {
@@ -31,87 +33,24 @@ async fn main() {
 
     let _enter = rt.enter();
 
-    std::thread::spawn(move || {
-        rt.block_on(async {
-            loop {
-            }
-        })
-    });
+    std::thread::spawn(move || rt.block_on(async { loop {} }));
 
     let native_options = eframe::NativeOptions::default();
-    eframe::run_native("UGG API TEST", native_options, Box::new(|cc| Box::new(MyEguiApp::new(cc))));
+    eframe::run_native(
+        "UGG API TEST",
+        native_options,
+        Box::new(|cc| Box::new(crate::ui::MyEguiApp::new(cc))),
+    );
 }
 
-enum Results {
-    Result(Result<MatchSummeryTranslated, Errors>),
-    String(String)
-}
-
-struct MyEguiApp {
-    tx: Sender<Results>,
-    rx: Receiver<Results>,
-
-    name: String,
-    time: Option<String>,
-}
-
-impl Default for MyEguiApp {
-    fn default() -> Self {
-        let (tx, rx) = std::sync::mpsc::channel();
-
-        Self { 
-            tx, 
-            rx, 
-            name: Default::default(),
-            time: Default::default(),
-        }
-    }
-}
-
-impl MyEguiApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        Self::default()
-    }
-}
-
-impl eframe::App for MyEguiApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if let Ok(pain) = self.rx.try_recv() {
-                if let Results::Result(pain) = pain {
-                    if let Ok(pain) = pain {
-                        self.time = Some(format!("{}    {}    {}", pain.kda, pain.kp, pain.time));
-                    } else {
-                        self.time = None;
-                    }
-                };
-            }
-            ui.heading(&self.name);
-            match &self.time {
-                Some(a) => {
-                    ui.heading(a);
-                },
-                None => {
-                    ui.spinner();
-                },
-            }
-            ui.horizontal(|ui| {
-                if ui.text_edit_singleline(&mut self.name).changed() {
-                    send_request(self.name.clone(), self.tx.clone(), ctx.clone());
-                }
-            })
-        });
-    }
- }
-
-fn send_request(name: String, tx: Sender<Results>, ctx: egui::Context) {
+fn send_request(name: String, tx: Sender<Results>, ctx: egui::Context, role: i64) {
     tokio::spawn(async move {
-        let request = request(&name, "na1", vec![], 1).await;
+        let request = request(&name, "na1", vec![role], 1).await;
         match request {
             Ok(response) => {
                 let _ = tx.send(Results::Result(Ok(response)));
                 ctx.request_repaint();
-            },
+            }
             Err(error) => {
                 let _ = tx.send(Results::Result(Err(error)));
                 ctx.request_repaint();
@@ -122,7 +61,12 @@ fn send_request(name: String, tx: Sender<Results>, ctx: egui::Context) {
     });
 }
 
-async fn request(name: &str, region_id: &str, role: Vec<i32>, page: i16) -> Result<MatchSummeryTranslated, Errors> {
+async fn request(
+    name: &str,
+    region_id: &str,
+    role: Vec<i64>,
+    page: i16,
+) -> Result<MatchSummeryTranslated, Errors> {
     let json = json!(
         {
         "operationName": "FetchMatchSummaries",
@@ -248,16 +192,16 @@ async fn request(name: &str, region_id: &str, role: Vec<i32>, page: i16) -> Resu
             match text {
                 Ok(json) => {
                     let summeries = json.data.fetch_player_match_summaries.match_summaries;
-                    if !(summeries.len() > 0) {
+                    if summeries.is_empty() {
                         return Err(Errors::GenericError);
-                    } 
+                    }
                     let last_match = &summeries[0];
 
                     let kda = format!(
                         "{}/{}/{}",
                         last_match.kills, last_match.deaths, last_match.assists
                     );
-                    let gold = last_match.gold;
+                    let _gold = last_match.gold;
                     let kp = format!("{}%", last_match.kill_participation);
 
                     let time = format_time(last_match.match_duration);
@@ -274,17 +218,16 @@ async fn request(name: &str, region_id: &str, role: Vec<i32>, page: i16) -> Resu
     }
 }
 
-
 #[derive(Debug)]
-enum Errors {
+pub enum Errors {
     Request(reqwest::Error),
-    GenericError
+    GenericError,
 }
 
-struct MatchSummeryTranslated {
+pub struct MatchSummeryTranslated {
     time: String,
     kda: String,
-    kp: String
+    kp: String,
 }
 
 fn format_time(match_time: i64) -> String {
