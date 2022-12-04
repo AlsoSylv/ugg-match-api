@@ -1,0 +1,9 @@
+query PlayerInfoSuggestions($query: String!, $regionId: String!) {
+  playerInfoSuggestions(query: $query, regionId: $regionId) {
+    puuidV4
+    summonerName
+    iconId
+    summonerLevel
+    __typename
+  }
+}
