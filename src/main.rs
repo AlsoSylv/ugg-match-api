@@ -10,30 +10,15 @@ use ui::Results;
 mod structs;
 mod ui;
 
-/*
-   let mut roles = Vec::new();
-   let role_map = HashMap::from([
-       ("Top", 4),
-       ("Jungle", 1),
-       ("Mid", 5),
-       ("ADC", 3),
-       ("Support", 2),
-       ("None", 6),
-   ]);
-   let vec_roles: Vec<&str> = vec![];
-   for x in vec_roles {
-       roles.push(*(role_map.get(x).unwrap()))
-   }
-   request("xayah na", "na1", roles, 1).await;
-*/
-
 #[tokio::main]
 async fn main() {
     let rt = Runtime::new().expect("Pain");
 
     let _enter = rt.enter();
 
-    std::thread::spawn(move || rt.block_on(async { loop {} }));
+    std::thread::spawn(move || rt.block_on(async { loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }}));
 
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
