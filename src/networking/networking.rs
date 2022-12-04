@@ -2,19 +2,20 @@ use graphql_client::GraphQLQuery;
 
 use crate::{
     format_time,
-    graphql::structs::{fetch_match_summaries, FetchMatchSummaries},
+    graphql::structs::{
+        fetch_match_summaries, player_info_suggestions, FetchMatchSummaries, PlayerInfoSuggestions,
+    },
     structs, MatchSummeryTranslated,
 };
 
 pub async fn fetch_match_summaries(
-    name: &mut String,
+    mut name: String,
     region_id: &str,
     role: Vec<Option<i64>>,
     page: i64,
+    client: reqwest::Client,
 ) -> Result<MatchSummeryTranslated, reqwest::Error> {
-    let client = reqwest::Client::new();
-
-    remove_whitespace(name);
+    remove_whitespace(&mut name);
     let vars = fetch_match_summaries::Variables {
         champion_id: Some(Vec::new()),
         page: Some(page),
@@ -32,11 +33,12 @@ pub async fn fetch_match_summaries(
         .send()
         .await;
     match res {
-        Ok(yay) => match yay.json::<structs::Root>().await {
+        Ok(yay) => match yay.json::<structs::PlayerMatchSummeries>().await {
             Ok(json) => {
                 let summeries = json.data.fetch_player_match_summaries.match_summaries;
                 if summeries.is_empty() {
-                    todo!()
+                    // This should be unreachable if the API is impmenented properly
+                    unreachable!()
                 }
                 let last_match = &summeries[0];
 
@@ -52,6 +54,33 @@ pub async fn fetch_match_summaries(
             }
             Err(err) => Err(err),
         },
+        Err(boo) => Err(boo),
+    }
+}
+
+pub async fn player_suggestiosn(
+    mut name: String,
+    client: &reqwest::Client,
+) -> Result<structs::PlayerSuggestions, reqwest::Error> {
+    remove_whitespace(&mut name);
+    let vars = player_info_suggestions::Variables {
+        query: name.to_lowercase(),
+        region_id: "na1".to_string(),
+    };
+    let request_body = PlayerInfoSuggestions::build_query(vars);
+    let res = client
+        .post("https://u.gg/api")
+        .json(&request_body)
+        .send()
+        .await;
+    match res {
+        Ok(yay) => {
+            let yay = yay.json::<structs::PlayerSuggestions>().await;
+            match yay {
+                Ok(json) => Ok(json),
+                Err(err) => Err(err),
+            }
+        }
         Err(boo) => Err(boo),
     }
 }
