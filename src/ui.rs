@@ -1,11 +1,12 @@
 use crate::structs::{self, PlayerSuggestions};
-use crate::{match_summaries, player_suggestions, Errors, MatchSummeryTranslated};
+use crate::{match_summaries, player_suggestions, Errors};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use eframe::egui;
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
 
 pub enum Results {
-    MatchSum(Result<MatchSummeryTranslated, Errors>),
+    MatchSum(Result<structs::PlayerMatchSummeries, Errors>),
     PlayerSuggestions(Result<structs::PlayerSuggestions, Errors>),
 }
 
@@ -62,9 +63,10 @@ impl eframe::App for MyEguiApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Ok(pain) = self.rx.try_recv() {
                 if let Results::MatchSum(Ok(pain)) = &pain {
+                    let a = &pain.data.fetch_player_match_summaries.match_summaries[0];
                     self.time = Some(format!(
                         "KDA: {}    KP: {}    TIME: {}",
-                        pain.kda, pain.kp, pain.time
+                        format!("{}/{}/{}", a.kills, a.deaths, a.assists), format!("{}%", a.kill_participation), format_time(a.match_duration)
                     ));
                 } else {
                     self.time = None;
@@ -134,3 +136,16 @@ impl eframe::App for MyEguiApp {
         });
     }
 }
+
+fn format_time(match_time: i64) -> String {
+    let native_time = NaiveDateTime::from_timestamp_opt(match_time, 0).unwrap();
+    let time: DateTime<Utc> = DateTime::from_local(native_time, Utc);
+    let human_time = time.format("%H:%M:%S");
+    if human_time.to_string().split(':').collect::<Vec<&str>>()[0] == "00" {
+        let human_time = time.format("%M:%S");
+        human_time.to_string()
+    } else {
+        human_time.to_string()
+    }
+}
+

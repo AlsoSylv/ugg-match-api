@@ -1,11 +1,10 @@
 use graphql_client::GraphQLQuery;
 
 use crate::{
-    format_time,
     graphql::structs::{
         fetch_match_summaries, player_info_suggestions, FetchMatchSummaries, PlayerInfoSuggestions,
     },
-    structs, MatchSummeryTranslated,
+    structs,
 };
 
 pub async fn fetch_match_summaries(
@@ -14,7 +13,7 @@ pub async fn fetch_match_summaries(
     role: Vec<Option<i64>>,
     page: i64,
     client: reqwest::Client,
-) -> Result<MatchSummeryTranslated, reqwest::Error> {
+) -> Result<structs::PlayerMatchSummeries, reqwest::Error> {
     remove_whitespace(&mut name);
     let vars = fetch_match_summaries::Variables {
         champion_id: Some(Vec::new()),
@@ -34,24 +33,7 @@ pub async fn fetch_match_summaries(
         .await;
     match res {
         Ok(yay) => match yay.json::<structs::PlayerMatchSummeries>().await {
-            Ok(json) => {
-                let summeries = json.data.fetch_player_match_summaries.match_summaries;
-                if summeries.is_empty() {
-                    // This should be unreachable if the API is impmenented properly
-                    unreachable!()
-                }
-                let last_match = &summeries[0];
-
-                let kda = format!(
-                    "{}/{}/{}",
-                    last_match.kills, last_match.deaths, last_match.assists
-                );
-                let _gold = last_match.gold;
-                let kp = format!("{}%", last_match.kill_participation);
-
-                let time = format_time(last_match.match_duration);
-                Ok(MatchSummeryTranslated { time, kda, kp })
-            }
+            Ok(json) => Ok(json),
             Err(err) => Err(err),
         },
         Err(boo) => Err(boo),
