@@ -1,5 +1,5 @@
 use crate::structs::{self, MatchSummary, PlayerSuggestions};
-use crate::{match_summaries, player_suggestions, Errors};
+use crate::{match_summaries, player_suggestions, update_player, Errors};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use eframe::egui;
 use std::collections::HashMap;
@@ -8,6 +8,7 @@ use std::sync::mpsc::{Receiver, Sender};
 pub enum Results {
     MatchSum(Result<structs::PlayerMatchSummeries, Errors>),
     PlayerSuggestions(Result<structs::PlayerSuggestions, Errors>),
+    PlayerUpdate(Result<structs::UpdatePlayer, Errors>),
 }
 
 pub struct MyEguiApp {
@@ -119,6 +120,21 @@ impl MyEguiApp {
             ));
         });
     }
+
+    fn update_player(&self, ctx: &egui::Context) {
+        update_player(
+            self.name.clone(),
+            self.tx.clone(),
+            ctx.clone(),
+            self.client.clone(),
+        );
+        player_suggestions(
+            self.name.clone(),
+            self.tx.clone(),
+            ctx.clone(),
+            self.client.clone(),
+        );
+    }
 }
 
 impl eframe::App for MyEguiApp {
@@ -131,7 +147,8 @@ impl eframe::App for MyEguiApp {
                             let a = &matches.data.fetch_player_match_summaries.match_summaries;
                             self.summeries = Some(a.clone());
                         }
-                        Err(_err) => {
+                        Err(err) => {
+                            println!("{:?}", err);
                             self.summeries = None;
                         }
                     },
@@ -139,8 +156,22 @@ impl eframe::App for MyEguiApp {
                         Ok(players) => {
                             self.players = Some(players);
                         }
-                        Err(_err) => {
+                        Err(err) => {
+                            println!("{:?}", err);
                             self.players = None;
+                        }
+                    },
+                    Results::PlayerUpdate(update) => match update {
+                        Ok(updated) => {
+                            let data = updated.data.update_player_profile;
+                            if data.success {
+                                self.update_matches(ctx);
+                            } else {
+                                println!("{:?}", data.error_reason);
+                            }
+                        }
+                        Err(err) => {
+                            println!("{:?}", err)
                         }
                     },
                 }
@@ -193,26 +224,44 @@ impl eframe::App for MyEguiApp {
 
                 ui.add_space(5.0);
 
-                if ui.button("Update Player").clicked() {
-                    self.update_matches(ctx);
-                };
+                ui.horizontal(|ui| {
+                    if ui.button("Refresh Player").clicked() {
+                        // self.update_player(ctx);
+                        self.update_matches(ctx);
+                    };
+
+                    ui.add_space(5.0);
+
+                    if ui.button("Update Player").clicked() {
+                        self.update_player(ctx);
+                        // self.update_matches(ctx);
+                    };
+                });
 
                 ui.add_space(5.0);
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    if let Some(summeries) = &self.summeries {
-                        if summeries.is_empty() {
-                            ui.label("No Data For Summoner");
-                        }
+                egui::ScrollArea::vertical()
+                    .max_height(ui.available_height() - 50.0)
+                    .show(ui, |ui| {
+                        if let Some(summeries) = &self.summeries {
+                            if summeries.is_empty() {
+                                ui.label("No Data For Summoner");
+                            } else {
+                                ui.separator();
 
-                        for summary in summeries {
-                            self.match_page(summary, ui);
-                            ui.separator();
+                                for summary in summeries {
+                                    self.match_page(summary, ui);
+                                    ui.separator();
+                                }
+                            }
+                        } else {
+                            ui.spinner();
                         }
-                    } else {
-                        ui.spinner();
-                    }
-                });
+                    });
+
+                ui.add_space(5.0);
+
+                ui.hyperlink_to("U.GG", "https://u.gg/");
             });
         });
     }

@@ -79,6 +79,22 @@ fn player_suggestions(
     });
 }
 
+fn update_player(name: String, tx: Sender<Results>, ctx: egui::Context, client: reqwest::Client) {
+    tokio::spawn(async move {
+        let request = networking::update_player(name, &client).await;
+        match request {
+            Ok(response) => {
+                let _ = tx.send(Results::PlayerUpdate(Ok(response)));
+                ctx.request_repaint();
+            }
+            Err(error) => {
+                let _ = tx.send(Results::PlayerUpdate(Err(Errors::Request(error))));
+                ctx.request_repaint();
+            }
+        }
+    });
+}
+
 #[derive(Debug)]
 pub enum Errors {
     Request(reqwest::Error),
