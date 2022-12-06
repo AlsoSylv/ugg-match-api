@@ -152,3 +152,37 @@ pub struct UpdatePlayerProfile {
     pub error_reason: Value,
     pub success: bool,
 }
+
+/// Deserealize PlayerRanks
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerRank {
+    pub data: RankData,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RankData {
+    pub fetch_profile_ranks: FetchProfileRanks,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchProfileRanks {
+    pub rank_scores: Vec<RankScore>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RankScore {
+    pub last_updated_at: Option<i64>,
+    pub losses: i64,
+    pub lp: i64,
+    pub promo_progress: Option<String>,
+    pub queue_type: String,
+    pub rank: String,
+    pub role: Option<String>,
+    pub season_id: i64,
+    pub tier: String,
+    pub wins: i64,
+}

@@ -1,5 +1,5 @@
-use crate::structs::{self, MatchSummary, PlayerSuggestions};
-use crate::{match_summaries, player_suggestions, update_player, Errors};
+use crate::structs::{self, MatchSummary, PlayerSuggestions, RankScore};
+use crate::{match_summaries, player_ranks, player_suggestions, update_player, Errors};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use eframe::egui;
 use std::collections::HashMap;
@@ -9,6 +9,7 @@ pub enum Results {
     MatchSum(Result<structs::PlayerMatchSummeries, Errors>),
     PlayerSuggestions(Result<structs::PlayerSuggestions, Errors>),
     PlayerUpdate(Result<structs::UpdatePlayer, Errors>),
+    ProfileRanks(Result<structs::PlayerRank, Errors>),
 }
 
 pub struct MyEguiApp {
@@ -21,6 +22,7 @@ pub struct MyEguiApp {
     roles_reversed: HashMap<i64, String>,
     players: Option<PlayerSuggestions>,
     summeries: Option<Vec<MatchSummary>>,
+    rank: Option<RankScore>,
 
     client: reqwest::Client,
 }
@@ -54,11 +56,12 @@ impl Default for MyEguiApp {
             tx,
             rx,
             name: Default::default(),
-            role: Default::default(),
+            role: "None".to_owned(),
             roles_map,
             roles_reversed,
             players: None,
             summeries: None,
+            rank: None,
             client,
         }
     }
@@ -88,6 +91,12 @@ impl MyEguiApp {
                 self.client.clone(),
             );
         };
+        player_ranks(
+            self.name.clone(),
+            self.tx.clone(),
+            ctx.clone(),
+            self.client.clone(),
+        );
     }
 
     fn update_player_suggestion(&self, ctx: &egui::Context) {
@@ -128,55 +137,76 @@ impl MyEguiApp {
             ctx.clone(),
             self.client.clone(),
         );
-        player_suggestions(
-            self.name.clone(),
-            self.tx.clone(),
-            ctx.clone(),
-            self.client.clone(),
-        );
+        self.update_matches(ctx);
     }
 }
 
 impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if let Ok(pain) = self.rx.try_recv() {
-                match pain {
-                    Results::MatchSum(match_sums) => match match_sums {
-                        Ok(matches) => {
-                            let a = &matches.data.fetch_player_match_summaries.match_summaries;
-                            self.summeries = Some(a.clone());
+        if let Ok(receiver) = self.rx.try_recv() {
+            match receiver {
+                Results::MatchSum(match_sums) => match match_sums {
+                    Ok(matches) => {
+                        let a = &matches.data.fetch_player_match_summaries.match_summaries;
+                        self.summeries = Some(a.clone());
+                    }
+                    Err(err) => {
+                        println!("{:?}", err);
+                        self.summeries = None;
+                    }
+                },
+                Results::PlayerSuggestions(players) => match players {
+                    Ok(players) => {
+                        self.players = Some(players);
+                    }
+                    Err(err) => {
+                        println!("{:?}", err);
+                        self.players = None;
+                    }
+                },
+                Results::PlayerUpdate(update) => match update {
+                    Ok(updated) => {
+                        let data = updated.data.update_player_profile;
+                        if data.success {
+                            self.update_matches(ctx);
+                        } else {
+                            println!("{:?}", data.error_reason);
                         }
-                        Err(err) => {
-                            println!("{:?}", err);
-                            self.summeries = None;
-                        }
-                    },
-                    Results::PlayerSuggestions(players) => match players {
-                        Ok(players) => {
-                            self.players = Some(players);
-                        }
-                        Err(err) => {
-                            println!("{:?}", err);
-                            self.players = None;
-                        }
-                    },
-                    Results::PlayerUpdate(update) => match update {
-                        Ok(updated) => {
-                            let data = updated.data.update_player_profile;
-                            if data.success {
-                                self.update_matches(ctx);
-                            } else {
-                                println!("{:?}", data.error_reason);
-                            }
-                        }
-                        Err(err) => {
-                            println!("{:?}", err)
-                        }
-                    },
-                }
+                    }
+                    Err(err) => {
+                        println!("{:?}", err)
+                    }
+                },
+                Results::ProfileRanks(rank) => match rank {
+                    Ok(rank) => {
+                        let data = rank.data.fetch_profile_ranks.rank_scores;
+                        self.rank = Some(data[0].clone());
+                    }
+                    Err(err) => {
+                        println!("{:?}", err)
+                    }
+                },
             }
+        }
 
+        egui::TopBottomPanel::top("top").show(ctx, |ui| {
+            ui.label(format!("Summoner: {}", self.name))
+                .on_hover_ui(|ui| {
+                    if let Some(rank) = &self.rank {
+                        if rank.tier.is_empty() {
+                            ui.label("Unranked");
+                        } else {
+                            ui.label(format!("Rank: {} {}", rank.tier, rank.rank));
+                            ui.label(format!("LP: {}", rank.lp));
+                            ui.label(format!("Queue: {}", rank.queue_type));
+                        }
+                    } else {
+                        ui.spinner();
+                    }
+                })
+        });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.add_space(5.0);
 
@@ -235,6 +265,15 @@ impl eframe::App for MyEguiApp {
                     if ui.button("Update Player").clicked() {
                         self.update_player(ctx);
                         // self.update_matches(ctx);
+                    };
+
+                    ui.add_space(5.0);
+
+                    if ui.button("Reset GUI").clicked() {
+                        self.name = Default::default();
+                        self.role = "None".to_owned();
+                        self.summeries = None;
+                        self.players = None;
                     };
                 });
 
