@@ -17,8 +17,8 @@ pub struct Data {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchPlayerMatchSummaries {
-    #[serde(rename = "__typename")]
-    pub typename: String,
+    // #[serde(rename = "__typename")]
+    // pub typename: String,
     pub finished_match_summaries: bool,
     pub match_summaries: Vec<MatchSummary>,
     pub total_num_matches: i64,
@@ -27,8 +27,8 @@ pub struct FetchPlayerMatchSummaries {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MatchSummary {
-    #[serde(rename = "__typename")]
-    pub typename: String,
+    // #[serde(rename = "__typename")]
+    // pub typename: String,
     pub assists: i64,
     pub champion_id: i64,
     pub cs: i64,
@@ -65,8 +65,8 @@ pub struct MatchSummary {
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LpInfo {
-    #[serde(rename = "__typename")]
-    pub typename: String,
+    // #[serde(rename = "__typename")]
+    // pub typename: String,
     pub lp: i64,
     pub placement: i64,
     pub promo_progress: String,
@@ -77,8 +77,8 @@ pub struct LpInfo {
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PromotedTo {
-    #[serde(rename = "__typename")]
-    pub typename: String,
+    // #[serde(rename = "__typename")]
+    // pub typename: String,
     pub rank: String,
     pub tier: String,
 }
@@ -86,8 +86,8 @@ pub struct PromotedTo {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamA {
-    #[serde(rename = "__typename")]
-    pub typename: String,
+    // #[serde(rename = "__typename")]
+    // pub typename: String,
     pub champion_id: i64,
     pub hard_carry: f64,
     pub role: i64,
@@ -99,8 +99,8 @@ pub struct TeamA {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamB {
-    #[serde(rename = "__typename")]
-    pub typename: String,
+    // #[serde(rename = "__typename")]
+    // pub typename: String,
     pub champion_id: i64,
     pub hard_carry: f64,
     pub role: i64,
@@ -125,8 +125,8 @@ pub struct PlayerData {
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerInfoSuggestion {
-    #[serde(rename = "__typename")]
-    pub typename: String,
+    // #[serde(rename = "__typename")]
+    // pub typename: String,
     pub icon_id: i64,
     pub puuid_v4: String,
     pub summoner_level: i64,

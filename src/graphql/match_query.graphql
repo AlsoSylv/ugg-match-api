@@ -53,9 +53,9 @@ fetchPlayerMatchSummaries(
                 promotedTo {
                     tier
                     rank
-                    __typename
+                    # __typename
                 }
-            __typename
+            # __typename
             }
             teamA {
                 championId
@@ -64,7 +64,7 @@ fetchPlayerMatchSummaries(
                 role
                 hardCarry
                 teamplay
-                __typename
+                # __typename
             }
             teamB {
                 championId
@@ -73,13 +73,13 @@ fetchPlayerMatchSummaries(
                 role
                 hardCarry
                 teamplay
-                __typename
+                # __typename
             }
             version
             visionScore
             win
-            __typename
+            # __typename
         }
-        __typename
+        # __typename
     }
 }

@@ -4,6 +4,6 @@ query PlayerInfoSuggestions($query: String!, $regionId: String!) {
     summonerName
     iconId
     summonerLevel
-    __typename
+    # __typename
   }
 }
