@@ -147,6 +147,9 @@ impl MyEguiApp {
         search_bar.request_focus();
         if search_bar.changed() {
             self.update_player_suggestion(ctx);
+            if self.name.is_empty() {
+                self.active_player = self.name.clone();
+            }
         };
 
         if let Some(pain) = self.players.clone() {
@@ -220,6 +223,29 @@ impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.update_data(ctx);
 
+        egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                ui.horizontal(|ui| {
+                    egui::widgets::global_dark_light_mode_switch(ui);
+
+                    ui.add_space(5.0);
+
+                    let reset_button = ui.button("Reset GUI");
+
+                    if reset_button.clicked() {
+                        self.name = Default::default();
+                        self.role = "None".to_owned();
+                        self.summeries = None;
+                        self.players = None;
+                    };
+
+                    reset_button.on_hover_ui(|ui| {
+                        ui.label("Reset GUI To Defaults");
+                    });
+                });
+            });
+        });
+
         egui::SidePanel::left("side_panel")
             .resizable(false)
             .show(ctx, |ui| {
@@ -247,32 +273,8 @@ impl eframe::App for MyEguiApp {
                             });
                     });
 
-                    ui.separator();
+                    ui.add_space(5.0);
 
-                    ui.label(format!("Summoner: {}", self.active_player));
-                    if let Some(rank) = &self.rank {
-                        if rank.tier.is_empty() {
-                            ui.label("Unranked");
-                            ui.label("LP: None");
-                            ui.label(format!("Queue: {}", rank.queue_type));
-                        } else {
-                            ui.label(format!("Rank: {} {}", rank.tier, rank.rank));
-                            ui.label(format!("LP: {}", rank.lp));
-                            ui.label(format!("Queue: {}", rank.queue_type));
-                        }
-                    };
-                });
-
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                    egui::widgets::global_dark_light_mode_switch(ui);
-                });
-            });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical(|ui| {
-                ui.add_space(5.0);
-
-                ui.horizontal(|ui| {
                     if ui.button("Refresh Player").clicked() {
                         self.update_matches(ctx);
                     };
@@ -283,22 +285,33 @@ impl eframe::App for MyEguiApp {
                         self.update_player(ctx);
                     };
 
-                    ui.add_space(5.0);
+                    ui.separator();
 
-                    if ui.button("Reset GUI").clicked() {
-                        self.name = Default::default();
-                        self.role = "None".to_owned();
-                        self.summeries = None;
-                        self.players = None;
+                    ui.label(format!("Summoner: {}", self.active_player));
+                    if let Some(rank) = &self.rank {
+                        if rank.tier.is_empty() {
+                            ui.label("Unranked");
+                            ui.label("LP: None");
+                            ui.label(format!("Wins: {}", rank.wins));
+                            ui.label(format!("Losses: {}", rank.losses));
+                            ui.label(format!("Queue: {}", rank.queue_type));
+                        } else {
+                            ui.label(format!("Rank: {} {}", rank.tier, rank.rank));
+                            ui.label(format!("LP: {}", rank.lp));
+                            ui.label(format!("Wins: {}", rank.wins));
+                            ui.label(format!("Losses: {}", rank.losses));
+                            ui.label(format!("Queue: {}", rank.queue_type));
+                        }
                     };
                 });
+            });
 
-                ui.add_space(5.0);
-                ui.separator();
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
                 ui.add_space(5.0);
 
                 egui::ScrollArea::vertical()
-                    .max_height(ui.available_height() - 50.0)
+                    .max_height(ui.available_height())
                     .show(ui, |ui| {
                         if let Some(summeries) = &self.summeries {
                             if summeries.is_empty() {
@@ -311,16 +324,10 @@ impl eframe::App for MyEguiApp {
                                     }
                                 }
                             }
-                        } else {
-                            // ui.spinner();
+                        } else if self.summeries.is_none() && !self.active_player.is_empty() {
+                            ui.spinner();
                         }
                     });
-
-                ui.separator();
-
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                    egui::widgets::global_dark_light_mode_switch(ui);
-                });
             });
         });
     }
