@@ -3,8 +3,9 @@ use serde::Deserialize;
 
 use crate::{
     graphql::structs::{
-        fetch_match_summaries, fetch_profile_ranks, player_info_suggestions, update_player_profile,
-        FetchMatchSummaries, FetchProfileRanks, PlayerInfoSuggestions, UpdatePlayerProfile,
+        fetch_match_summaries, fetch_profile_ranks, get_overall_player_ranking,
+        player_info_suggestions, update_player_profile, FetchMatchSummaries, FetchProfileRanks,
+        GetOverallPlayerRanking, PlayerInfoSuggestions, UpdatePlayerProfile,
     },
     structs,
 };
@@ -68,6 +69,20 @@ pub async fn profile_ranks(
     };
 
     request::<FetchProfileRanks, structs::PlayerRank>(vars, client).await
+}
+
+pub async fn player_ranking(
+    mut name: String,
+    client: &reqwest::Client,
+) -> Result<structs::PlayerRanking, reqwest::Error> {
+    remove_whitespace(&mut name);
+    let vars = get_overall_player_ranking::Variables {
+        region_id: Some("na1".to_string()),
+        summoner_name: Some(name.to_lowercase()),
+        queue_type: Some(420),
+    };
+
+    request::<GetOverallPlayerRanking, structs::PlayerRanking>(vars, client).await
 }
 
 async fn request<T: GraphQLQuery, R: for<'de> Deserialize<'de>>(
