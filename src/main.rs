@@ -42,7 +42,7 @@ fn match_summaries(
 ) {
     tokio::spawn(async move {
         let role = match role {
-            Some(int) => vec![Some(int)],
+            Some(int) => vec![int],
             None => Vec::new(),
         };
         let request = networking::fetch_match_summaries(name, "na1", role, 1, &client).await;

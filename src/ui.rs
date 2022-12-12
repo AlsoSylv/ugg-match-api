@@ -243,24 +243,23 @@ impl eframe::App for MyEguiApp {
         self.update_data(ctx);
 
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                ui.horizontal(|ui| {
-                    egui::widgets::global_dark_light_mode_switch(ui);
+            ui.add_space(5.0);
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::LEFT), |ui| {
+                egui::widgets::global_dark_light_mode_switch(ui);
 
-                    ui.add_space(5.0);
+                ui.add_space(5.0);
 
-                    let reset_button = ui.button("Reset GUI");
+                let reset_button = ui.button("Reset GUI");
 
-                    if reset_button.clicked() {
-                        self.name = Default::default();
-                        self.role = "None".to_owned();
-                        self.summeries = None;
-                        self.players = None;
-                    };
+                if reset_button.clicked() {
+                    self.name = Default::default();
+                    self.role = "None".to_owned();
+                    self.summeries = None;
+                    self.players = None;
+                };
 
-                    reset_button.on_hover_ui(|ui| {
-                        ui.label("Reset GUI To Defaults");
-                    });
+                reset_button.on_hover_ui(|ui| {
+                    ui.label("Reset GUI To Defaults");
                 });
             });
         });
