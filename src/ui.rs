@@ -29,6 +29,9 @@ pub struct MyEguiApp {
     rank: Option<RankScore>,
     ranking: Option<OverallRanking>,
 
+    refresh_enabled: bool,
+    update_enabled: bool,
+
     client: reqwest::Client,
 }
 
@@ -69,6 +72,8 @@ impl Default for MyEguiApp {
             summeries: None,
             rank: None,
             ranking: None,
+            refresh_enabled: false,
+            update_enabled: false,
             client,
         }
     }
@@ -256,6 +261,9 @@ impl eframe::App for MyEguiApp {
                     self.role = "None".to_owned();
                     self.summeries = None;
                     self.players = None;
+                    self.ranking = None;
+                    self.rank = None;
+                    self.active_player = Default::default();
                 };
 
                 reset_button.on_hover_ui(|ui| {
@@ -293,14 +301,26 @@ impl eframe::App for MyEguiApp {
 
                     ui.add_space(5.0);
 
-                    if ui.button("Refresh Player").clicked() {
+                    let button = ui.add_enabled(self.refresh_enabled, egui::Button::new("Refresh Player"));
+
+                    if button.clicked() {
                         self.update_matches(ctx);
                     };
 
                     ui.add_space(5.0);
 
-                    if ui.button("Update Player").clicked() {
+                    let button = ui.add_enabled(self.update_enabled, egui::Button::new("Update Player"));
+
+                    if button.clicked() {
                         self.update_player(ctx);
+                    };
+
+                    if !self.active_player.is_empty() {
+                        self.refresh_enabled = true;
+                        self.update_enabled = true;
+                    } else {
+                        self.refresh_enabled = false;
+                        self.update_enabled = false;
                     };
 
                     ui.separator();
