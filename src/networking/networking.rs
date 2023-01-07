@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::{
     graphql::structs::{
@@ -109,16 +108,20 @@ pub async fn player_ranking(
         .await
 }
 
+fn remove_whitespace(s: &mut String) {
+    s.retain(|c| !c.is_whitespace());
+}
+
 async fn request<Vars: Serialize, Data: for<'de> Deserialize<'de>>(
     query: &str,
     vars: Vars,
     client: &reqwest::Client,
     url: &str,
 ) -> Result<Data, reqwest::Error> {
-    let json = json!({
-        "variables": vars,
-        "query": query
-    });
+    let json = GQLQuery {
+        variables: vars,
+        query: query.to_string(),
+    };
 
     let client = client.post(url).json(&json).send().await;
     match client {
@@ -133,6 +136,9 @@ async fn request<Vars: Serialize, Data: for<'de> Deserialize<'de>>(
     }
 }
 
-fn remove_whitespace(s: &mut String) {
-    s.retain(|c| !c.is_whitespace());
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GQLQuery<T> {
+    variables: T,
+    query: String
 }
