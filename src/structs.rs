@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Deserialize Player Matches
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerMatchSummeries {
@@ -108,6 +109,7 @@ pub struct TeamB {
     pub teamplay: f64,
 }
 
+/// Deserialize Player Suggestions
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerSuggestions {

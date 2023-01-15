@@ -26,17 +26,20 @@ pub async fn fetch_match_summaries(
         summoner_name: name.to_string(),
     };
     let request_body = FetchMatchSummaries::build_query(vars);
-    let res = client
+    let request = client
         .post("https://u.gg/api")
         .json(&request_body)
         .send()
         .await;
-    match res {
-        Ok(yay) => match yay.json::<structs::PlayerMatchSummeries>().await {
-            Ok(json) => Ok(json),
-            Err(err) => Err(err),
-        },
-        Err(boo) => Err(boo),
+    match request {
+        Ok(response) => {
+            let json = response.json::<structs::PlayerMatchSummeries>().await;
+            match json {
+                Ok(json) => Ok(json),
+                Err(err) => Err(err),
+            }
+        }
+        Err(err) => Err(err),
     }
 }
 
@@ -50,20 +53,20 @@ pub async fn player_suggestiosn(
         region_id: "na1".to_string(),
     };
     let request_body = PlayerInfoSuggestions::build_query(vars);
-    let res = client
+    let request = client
         .post("https://u.gg/api")
         .json(&request_body)
         .send()
         .await;
-    match res {
-        Ok(yay) => {
-            let yay = yay.json::<structs::PlayerSuggestions>().await;
-            match yay {
+    match request {
+        Ok(response) => {
+            let json = response.json::<structs::PlayerSuggestions>().await;
+            match json {
                 Ok(json) => Ok(json),
                 Err(err) => Err(err),
             }
         }
-        Err(boo) => Err(boo),
+        Err(err) => Err(err),
     }
 }
 
