@@ -89,12 +89,12 @@ impl eframe::App for MyEguiApp {
 fn send_request(name: String, tx: Sender<String>, ctx: egui::Context) {
     tokio::spawn(async move {
         let request = request(&name, "na1", vec![], 1).await;
-        let _ = tx.send(request);
+        let _ = tx.send(request.unwrap());
         ctx.request_repaint();
     });
 }
 
-async fn request(name: &str, region_id: &str, role: Vec<i32>, page: i16) -> String {
+async fn request(name: &str, region_id: &str, role: Vec<i32>, page: i16) -> Result<String, reqwest::Error> {
     let json = json!(
         {
         "operationName": "FetchMatchSummaries",
@@ -234,12 +234,12 @@ async fn request(name: &str, region_id: &str, role: Vec<i32>, page: i16) -> Stri
                     println!("{}", kda);
                     println!("{:#}", gold);
                     println!("{}", kp);
-                    return time;
+                    Ok(time)
                 }
-                Err(error) => unreachable!(),
+                Err(error) => Err(error),
             }
         }
-        Err(error) => unreachable!(),
+        Err(error) => Err(error),
     }
 }
 
