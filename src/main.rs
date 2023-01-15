@@ -33,23 +33,50 @@ async fn main() {
     );
 }
 
-fn send_request(name: String, tx: Sender<Results>, ctx: egui::Context, role: i64) {
+fn match_summaries(
+    name: String,
+    tx: Sender<Results>,
+    ctx: egui::Context,
+    role: Option<i64>,
+    client: reqwest::Client,
+) {
     tokio::spawn(async move {
-        let mut name = name.clone();
-        let request =
-            networking::fetch_match_summaries(&mut name, "na1", vec![Some(role)], 1).await;
+        let role = match role {
+            Some(int) => vec![Some(int)],
+            None => Vec::new(),
+        };
+        let request = networking::fetch_match_summaries(name, "na1", role, 1, client).await;
         match request {
             Ok(response) => {
-                let _ = tx.send(Results::Result(Ok(response)));
+                let _ = tx.send(Results::MatchSum(Ok(response)));
                 ctx.request_repaint();
             }
             Err(error) => {
-                let _ = tx.send(Results::Result(Err(Errors::Request(error))));
+                let _ = tx.send(Results::MatchSum(Err(Errors::Request(error))));
                 ctx.request_repaint();
             }
         }
-        // let _ = tx.send(request.unwrap());
-        // ctx.request_repaint();
+    });
+}
+
+fn player_suggestions(
+    name: String,
+    tx: Sender<Results>,
+    ctx: egui::Context,
+    client: reqwest::Client,
+) {
+    tokio::spawn(async move {
+        let request = networking::player_suggestiosn(name, &client).await;
+        match request {
+            Ok(response) => {
+                let _ = tx.send(Results::PlayerSuggestions(Ok(response)));
+                ctx.request_repaint();
+            }
+            Err(error) => {
+                let _ = tx.send(Results::PlayerSuggestions(Err(Errors::Request(error))));
+                ctx.request_repaint();
+            }
+        }
     });
 }
 

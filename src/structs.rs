@@ -3,7 +3,7 @@ use serde_json::Value;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Root {
+pub struct PlayerMatchSummeries {
     pub data: Data,
 }
 
@@ -106,4 +106,27 @@ pub struct TeamB {
     pub summoner_name: String,
     pub team_id: Value,
     pub teamplay: f64,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerSuggestions {
+    pub data: PlayerData,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerData {
+    pub player_info_suggestions: Vec<PlayerInfoSuggestion>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerInfoSuggestion {
+    #[serde(rename = "__typename")]
+    pub typename: String,
+    pub icon_id: i64,
+    pub puuid_v4: String,
+    pub summoner_level: i64,
+    pub summoner_name: String,
 }
