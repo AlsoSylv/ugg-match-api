@@ -1,0 +1,16 @@
+query FetchProfileRanks($regionId: String!, $summonerName: String!) {
+  fetchProfileRanks(regionId: $regionId, summonerName: $summonerName, seasonId: 10) {
+    rankScores {
+      lastUpdatedAt
+      losses
+      lp
+      promoProgress
+      queueType
+      rank
+      role
+      tier
+      seasonId
+      wins
+    }
+  }
+}

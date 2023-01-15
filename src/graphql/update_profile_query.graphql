@@ -1,0 +1,6 @@
+query UpdatePlayerProfile($regionId: String!, $summonerName: String!) {
+  updatePlayerProfile(regionId: $regionId, summonerName: $summonerName) {
+    errorReason
+    success
+  }
+}

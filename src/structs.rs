@@ -132,3 +132,23 @@ pub struct PlayerInfoSuggestion {
     pub summoner_level: i64,
     pub summoner_name: String,
 }
+
+/// Deserialize Player Updates
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePlayer {
+    pub data: UpdateData,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateData {
+    pub update_player_profile: UpdatePlayerProfile,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePlayerProfile {
+    pub error_reason: Value,
+    pub success: bool,
+}

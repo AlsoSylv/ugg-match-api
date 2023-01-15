@@ -2,7 +2,8 @@ use graphql_client::GraphQLQuery;
 
 use crate::{
     graphql::structs::{
-        fetch_match_summaries, player_info_suggestions, FetchMatchSummaries, PlayerInfoSuggestions,
+        fetch_match_summaries, player_info_suggestions, update_player_profile, FetchMatchSummaries,
+        PlayerInfoSuggestions, UpdatePlayerProfile,
     },
     structs,
 };
@@ -61,6 +62,33 @@ pub async fn player_suggestiosn(
     match request {
         Ok(response) => {
             let json = response.json::<structs::PlayerSuggestions>().await;
+            match json {
+                Ok(json) => Ok(json),
+                Err(err) => Err(err),
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
+pub async fn update_player(
+    mut name: String,
+    client: &reqwest::Client,
+) -> Result<structs::UpdatePlayer, reqwest::Error> {
+    remove_whitespace(&mut name);
+    let vars = update_player_profile::Variables {
+        region_id: "na1".to_string(),
+        summoner_name: name.to_lowercase(),
+    };
+    let request_body = UpdatePlayerProfile::build_query(vars);
+    let request = client
+        .post("https://u.gg/api")
+        .json(&request_body)
+        .send()
+        .await;
+    match request {
+        Ok(response) => {
+            let json = response.json::<structs::UpdatePlayer>().await;
             match json {
                 Ok(json) => Ok(json),
                 Err(err) => Err(err),
