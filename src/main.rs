@@ -1,12 +1,13 @@
-use std::{str::FromStr, sync::mpsc::Sender};
+use std::sync::mpsc::Sender;
 
 use chrono::{self, DateTime, NaiveDateTime, Utc};
 use eframe::egui;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use serde_json::json;
 use tokio::runtime::Runtime;
 use ui::Results;
 
+mod graphql;
+#[path = "networking/networking.rs"]
+mod networking;
 mod structs;
 mod ui;
 
@@ -16,9 +17,13 @@ async fn main() {
 
     let _enter = rt.enter();
 
-    std::thread::spawn(move || rt.block_on(async { loop {
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }}));
+    std::thread::spawn(move || {
+        rt.block_on(async {
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        })
+    });
 
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
@@ -30,177 +35,22 @@ async fn main() {
 
 fn send_request(name: String, tx: Sender<Results>, ctx: egui::Context, role: i64) {
     tokio::spawn(async move {
-        let request = request(&name, "na1", vec![role], 1).await;
+        let mut name = name.clone();
+        let request =
+            networking::fetch_match_summaries(&mut name, "na1", vec![Some(role)], 1).await;
         match request {
             Ok(response) => {
                 let _ = tx.send(Results::Result(Ok(response)));
                 ctx.request_repaint();
             }
             Err(error) => {
-                let _ = tx.send(Results::Result(Err(error)));
+                let _ = tx.send(Results::Result(Err(Errors::Request(error))));
                 ctx.request_repaint();
             }
         }
         // let _ = tx.send(request.unwrap());
         // ctx.request_repaint();
     });
-}
-
-async fn request(
-    name: &str,
-    region_id: &str,
-    role: Vec<i64>,
-    page: i16,
-) -> Result<MatchSummeryTranslated, Errors> {
-    let json = json!(
-        {
-        "operationName": "FetchMatchSummaries",
-        "variables": {
-            "regionId": region_id,
-            "summonerName": name,
-            "queueType": [],
-            "duoName": "",
-            "role": role,
-            "seasonIds": [
-                18
-            ],
-            "championId": [],
-            "page": page
-        },
-        "query": "query FetchMatchSummaries(
-            $championId: [Int], 
-            $page: Int, 
-            $queueType: [Int], 
-            $duoName: String, 
-            $regionId: String!, 
-            $role: [Int], 
-            $seasonIds: [Int]!, 
-            $summonerName: String!
-            ) {
-            fetchPlayerMatchSummaries(
-                championId: $championId
-                page: $page
-                queueType: $queueType
-                duoName: $duoName
-                regionId: $regionId
-                role: $role
-                seasonIds: $seasonIds
-                summonerName: $summonerName) {
-                    finishedMatchSummaries
-                    totalNumMatches
-                    matchSummaries {
-                        assists
-                        championId
-                        cs
-                        damage
-                        deaths
-                        gold
-                        items
-                        jungleCs
-                        killParticipation
-                        kills
-                        level
-                        matchCreationTime
-                        matchDuration
-                        matchId
-                        maximumKillStreak
-                        primaryStyle
-                        queueType
-                        regionId
-                        role
-                        runes
-                        subStyle
-                        summonerName
-                        summonerSpells
-                        psHardCarry
-                        psTeamPlay
-                        lpInfo {
-                            lp
-                            placement
-                            promoProgress
-                            promoTarget
-                            promotedTo {
-                                tier
-                                rank
-                                __typename
-                            }
-                        __typename
-                        }
-                        teamA {
-                            championId
-                            summonerName
-                            teamId
-                            role
-                            hardCarry
-                            teamplay
-                            __typename
-                        }
-                        teamB {
-                            championId
-                            summonerName
-                            teamId
-                            role
-                            hardCarry
-                            teamplay
-                            __typename
-                        }
-                        version
-                        visionScore
-                        win
-                        __typename
-                    }
-                    __typename
-                }
-            }"
-        }
-    );
-
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        HeaderName::from_str("Accept-Language").unwrap(),
-        HeaderValue::from_str("en-US").unwrap(),
-    );
-    headers.insert(
-        HeaderName::from_str("content-type").unwrap(),
-        HeaderValue::from_str("application/json").unwrap(),
-    );
-    let client = reqwest::Client::new();
-    let request = client
-        .post("https://u.gg/api")
-        .headers(headers)
-        .json(&json)
-        .send()
-        .await;
-    match request {
-        Ok(reponse) => {
-            let text: Result<structs::Root, reqwest::Error> = reponse.json().await;
-            match text {
-                Ok(json) => {
-                    let summeries = json.data.fetch_player_match_summaries.match_summaries;
-                    if summeries.is_empty() {
-                        return Err(Errors::GenericError);
-                    }
-                    let last_match = &summeries[0];
-
-                    let kda = format!(
-                        "{}/{}/{}",
-                        last_match.kills, last_match.deaths, last_match.assists
-                    );
-                    let _gold = last_match.gold;
-                    let kp = format!("{}%", last_match.kill_participation);
-
-                    let time = format_time(last_match.match_duration);
-                    /*println!("{}", time);
-                    println!("{}", kda);
-                    println!("{}", gold);
-                    println!("{}", kp);*/
-                    Ok(MatchSummeryTranslated { time, kda, kp })
-                }
-                Err(error) => Err(Errors::Request(error)),
-            }
-        }
-        Err(error) => Err(Errors::Request(error)),
-    }
 }
 
 #[derive(Debug)]
