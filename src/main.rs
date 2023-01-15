@@ -1,6 +1,5 @@
 use std::sync::mpsc::Sender;
 
-use chrono::{self, DateTime, NaiveDateTime, Utc};
 use eframe::egui;
 use tokio::runtime::Runtime;
 use ui::Results;
@@ -84,22 +83,4 @@ fn player_suggestions(
 pub enum Errors {
     Request(reqwest::Error),
     GenericError,
-}
-
-pub struct MatchSummeryTranslated {
-    time: String,
-    kda: String,
-    kp: String,
-}
-
-fn format_time(match_time: i64) -> String {
-    let native_time = NaiveDateTime::from_timestamp_opt(match_time, 0).unwrap();
-    let time: DateTime<Utc> = DateTime::from_local(native_time, Utc);
-    let human_time = time.format("%H:%M:%S");
-    if human_time.to_string().split(':').collect::<Vec<&str>>()[0] == "00" {
-        let human_time = time.format("%M:%S");
-        human_time.to_string()
-    } else {
-        human_time.to_string()
-    }
 }
