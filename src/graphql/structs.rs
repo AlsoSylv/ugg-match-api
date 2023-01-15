@@ -1,48 +1,41 @@
-use graphql_client::GraphQLQuery;
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerInfoSuggestions {
+    pub query: String,
+    pub region_id: String,
+}
 
-#[derive(GraphQLQuery)]
-#[graphql(
-    schema_path = "src/graphql/schema.graphql",
-    query_path = "src/graphql/player_suggestion_query.graphql",
-    response_derives = "Debug, Serialize",
-    variables_derives = "Debug"
-)]
-pub struct PlayerInfoSuggestions;
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchMatchSummaries {
+    pub champion_id: Vec<i64>,
+    pub page: i64,
+    pub queue_type: Vec<i64>,
+    pub duo_name: String,
+    pub region_id: String,
+    pub role: Vec<i64>,
+    pub season_ids: Vec<i64>,
+    pub summoner_name: String,
+}
 
-#[derive(GraphQLQuery)]
-#[graphql(
-    schema_path = "src/graphql/schema.graphql",
-    query_path = "src/graphql/match_query.graphql",
-    response_derives = "Debug, Serialize",
-    variables_derives = "Debug"
-)]
-pub struct FetchMatchSummaries;
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePlayerProfile {
+    pub region_id: String,
+    pub summoner_name: String,
+}
 
-#[derive(GraphQLQuery)]
-#[graphql(
-    schema_path = "src/graphql/schema.graphql",
-    query_path = "src/graphql/update_profile_query.graphql",
-    response_derives = "Debug, Serialize",
-    variables_derives = "Debug"
-)]
-pub struct UpdatePlayerProfile;
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchProfileRanks {
+    pub region_id: String,
+    pub summoner_name: String,
+}
 
-#[derive(GraphQLQuery)]
-#[graphql(
-    schema_path = "src/graphql/schema.graphql",
-    query_path = "src/graphql/fetch_profile_rank_queries.graphql",
-    response_derives = "Debug, Serialize",
-    variables_derives = "Debug"
-)]
-pub struct FetchProfileRanks;
-
-#[derive(GraphQLQuery)]
-#[graphql(
-    schema_path = "src/graphql/schema.graphql",
-    query_path = "src/graphql/overall_player_ranking.graphql",
-    response_derives = "Debug, Serialize",
-    variables_derives = "Debug"
-)]
-pub struct GetOverallPlayerRanking;
-
-pub type UnixTimestamp = i64;
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetOverallPlayerRanking {
+    pub queue_type: i64,
+    pub summoner_name: String,
+    pub region_id: String,
+}
