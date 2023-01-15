@@ -42,12 +42,17 @@ async fn main() {
     eframe::run_native("UGG API TEST", native_options, Box::new(|cc| Box::new(MyEguiApp::new(cc))));
 }
 
+enum Results {
+    Result(Result<MatchSummeryTranslated, Errors>),
+    String(String)
+}
+
 struct MyEguiApp {
-    tx: Sender<String>,
-    rx: Receiver<String>,
+    tx: Sender<Results>,
+    rx: Receiver<Results>,
 
     name: String,
-    time: String,
+    time: Option<String>,
 }
 
 impl Default for MyEguiApp {
@@ -64,19 +69,32 @@ impl Default for MyEguiApp {
 }
 
 impl MyEguiApp {
-    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         Self::default()
     }
 }
 
 impl eframe::App for MyEguiApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Ok(pain) = self.rx.try_recv() {
-                self.time = pain;
+                if let Results::Result(pain) = pain {
+                    if let Ok(pain) = pain {
+                        self.time = Some(format!("{}    {}    {}", pain.kda, pain.kp, pain.time));
+                    } else {
+                        self.time = None;
+                    }
+                };
             }
             ui.heading(&self.name);
-            ui.heading(&self.time);
+            match &self.time {
+                Some(a) => {
+                    ui.heading(a);
+                },
+                None => {
+                    ui.spinner();
+                },
+            }
             ui.horizontal(|ui| {
                 if ui.text_edit_singleline(&mut self.name).changed() {
                     send_request(self.name.clone(), self.tx.clone(), ctx.clone());
@@ -86,15 +104,25 @@ impl eframe::App for MyEguiApp {
     }
  }
 
-fn send_request(name: String, tx: Sender<String>, ctx: egui::Context) {
+fn send_request(name: String, tx: Sender<Results>, ctx: egui::Context) {
     tokio::spawn(async move {
         let request = request(&name, "na1", vec![], 1).await;
-        let _ = tx.send(request.unwrap());
-        ctx.request_repaint();
+        match request {
+            Ok(response) => {
+                let _ = tx.send(Results::Result(Ok(response)));
+                ctx.request_repaint();
+            },
+            Err(error) => {
+                let _ = tx.send(Results::Result(Err(error)));
+                ctx.request_repaint();
+            }
+        }
+        // let _ = tx.send(request.unwrap());
+        // ctx.request_repaint();
     });
 }
 
-async fn request(name: &str, region_id: &str, role: Vec<i32>, page: i16) -> Result<String, reqwest::Error> {
+async fn request(name: &str, region_id: &str, role: Vec<i32>, page: i16) -> Result<MatchSummeryTranslated, Errors> {
     let json = json!(
         {
         "operationName": "FetchMatchSummaries",
@@ -220,6 +248,9 @@ async fn request(name: &str, region_id: &str, role: Vec<i32>, page: i16) -> Resu
             match text {
                 Ok(json) => {
                     let summeries = json.data.fetch_player_match_summaries.match_summaries;
+                    if !(summeries.len() > 0) {
+                        return Err(Errors::GenericError);
+                    } 
                     let last_match = &summeries[0];
 
                     let kda = format!(
@@ -230,17 +261,30 @@ async fn request(name: &str, region_id: &str, role: Vec<i32>, page: i16) -> Resu
                     let kp = format!("{}%", last_match.kill_participation);
 
                     let time = format_time(last_match.match_duration);
-                    println!("{}", time);
+                    /*println!("{}", time);
                     println!("{}", kda);
-                    println!("{:#}", gold);
-                    println!("{}", kp);
-                    Ok(time)
+                    println!("{}", gold);
+                    println!("{}", kp);*/
+                    Ok(MatchSummeryTranslated { time, kda, kp })
                 }
-                Err(error) => Err(error),
+                Err(error) => Err(Errors::Request(error)),
             }
         }
-        Err(error) => Err(error),
+        Err(error) => Err(Errors::Request(error)),
     }
+}
+
+
+#[derive(Debug)]
+enum Errors {
+    Request(reqwest::Error),
+    GenericError
+}
+
+struct MatchSummeryTranslated {
+    time: String,
+    kda: String,
+    kp: String
 }
 
 fn format_time(match_time: i64) -> String {
