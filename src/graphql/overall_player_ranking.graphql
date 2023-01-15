@@ -1,0 +1,6 @@
+query GetOverallPlayerRanking($queueType: Int, $summonerName: String, $regionId: String) {
+    overallRanking(queueType: $queueType, summonerName: $summonerName, regionId: $regionId) {
+        overallRanking
+        totalPlayerCount
+    }
+}

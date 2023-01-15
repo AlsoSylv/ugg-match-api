@@ -36,4 +36,13 @@ pub struct UpdatePlayerProfile;
 )]
 pub struct FetchProfileRanks;
 
+#[derive(GraphQLQuery)]
+#[graphql(
+    schema_path = "src/graphql/schema.graphql",
+    query_path = "src/graphql/overall_player_ranking.graphql",
+    response_derives = "Debug, Serialize",
+    variables_derives = "Debug"
+)]
+pub struct GetOverallPlayerRanking;
+
 pub type UnixTimestamp = i64;

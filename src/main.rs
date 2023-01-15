@@ -96,6 +96,22 @@ fn update_player(name: String, tx: Sender<Results>, ctx: egui::Context, client: 
     });
 }
 
+fn player_ranking(name: String, tx: Sender<Results>, ctx: egui::Context, client: reqwest::Client) {
+    tokio::spawn(async move {
+        let request = networking::player_ranking(name, &client).await;
+        match request {
+            Ok(response) => {
+                let _ = tx.send(Results::Ranking(Ok(response)));
+                ctx.request_repaint();
+            }
+            Err(error) => {
+                let _ = tx.send(Results::Ranking(Err(Errors::Request(error))));
+                ctx.request_repaint();
+            }
+        }
+    });
+}
+
 fn player_ranks(name: String, tx: Sender<Results>, ctx: egui::Context, client: reqwest::Client) {
     tokio::spawn(async move {
         let request = networking::profile_ranks(name, &client).await;

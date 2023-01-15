@@ -186,3 +186,23 @@ pub struct RankScore {
     pub tier: String,
     pub wins: i64,
 }
+
+/// Deserialize Player Overview
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerRanking {
+    pub data: RankingData,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RankingData {
+    pub overall_ranking: Option<OverallRanking>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverallRanking {
+    pub overall_ranking: i64,
+    pub total_player_count: i64,
+}

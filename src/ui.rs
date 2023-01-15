@@ -1,5 +1,7 @@
-use crate::structs::{self, MatchSummary, PlayerSuggestions, RankScore};
-use crate::{match_summaries, player_ranks, player_suggestions, update_player, Errors};
+use crate::structs::{self, MatchSummary, OverallRanking, PlayerSuggestions, RankScore};
+use crate::{
+    match_summaries, player_ranking, player_ranks, player_suggestions, update_player, Errors,
+};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use eframe::egui;
 use std::collections::HashMap;
@@ -10,6 +12,7 @@ pub enum Results {
     PlayerSuggestions(Result<structs::PlayerSuggestions, Errors>),
     PlayerUpdate(Result<structs::UpdatePlayer, Errors>),
     ProfileRanks(Result<structs::PlayerRank, Errors>),
+    Ranking(Result<structs::PlayerRanking, Errors>),
 }
 
 pub struct MyEguiApp {
@@ -24,6 +27,7 @@ pub struct MyEguiApp {
     players: Option<PlayerSuggestions>,
     summeries: Option<Vec<MatchSummary>>,
     rank: Option<RankScore>,
+    ranking: Option<OverallRanking>,
 
     client: reqwest::Client,
 }
@@ -64,6 +68,7 @@ impl Default for MyEguiApp {
             players: None,
             summeries: None,
             rank: None,
+            ranking: None,
             client,
         }
     }
@@ -94,6 +99,12 @@ impl MyEguiApp {
             );
         };
         player_ranks(
+            self.active_player.clone(),
+            self.tx.clone(),
+            ctx.clone(),
+            self.client.clone(),
+        );
+        player_ranking(
             self.active_player.clone(),
             self.tx.clone(),
             ctx.clone(),
@@ -214,6 +225,14 @@ impl MyEguiApp {
                         println!("{:?}", err)
                     }
                 },
+                Results::Ranking(ranking) => match ranking {
+                    Ok(ranking) => {
+                        self.ranking = ranking.data.overall_ranking;
+                    }
+                    Err(err) => {
+                        println!("{:?}", err)
+                    }
+                },
             }
         }
     }
@@ -301,6 +320,15 @@ impl eframe::App for MyEguiApp {
                             ui.label(format!("Wins: {}", rank.wins));
                             ui.label(format!("Losses: {}", rank.losses));
                             ui.label(format!("Queue: {}", rank.queue_type));
+                            if let Some(ranking) = &self.ranking {
+                                ui.label(format!("Ranking: {}", ranking.overall_ranking));
+                                ui.label(format!(
+                                    "Top: {:.1$}%",
+                                    (ranking.overall_ranking * 100) as f64
+                                        / (ranking.total_player_count) as f64,
+                                    1
+                                ));
+                            }
                         }
                     };
                 });
