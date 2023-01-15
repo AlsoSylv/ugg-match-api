@@ -1,4 +1,5 @@
 use graphql_client::GraphQLQuery;
+use serde::Deserialize;
 
 use crate::{
     graphql::structs::{
@@ -13,7 +14,7 @@ pub async fn fetch_match_summaries(
     region_id: &str,
     role: Vec<Option<i64>>,
     page: i64,
-    client: reqwest::Client,
+    client: &reqwest::Client,
 ) -> Result<structs::PlayerMatchSummeries, reqwest::Error> {
     remove_whitespace(&mut name);
     let vars = fetch_match_summaries::Variables {
@@ -26,22 +27,8 @@ pub async fn fetch_match_summaries(
         season_ids: vec![Some(18)],
         summoner_name: name.to_string(),
     };
-    let request_body = FetchMatchSummaries::build_query(vars);
-    let request = client
-        .post("https://u.gg/api")
-        .json(&request_body)
-        .send()
-        .await;
-    match request {
-        Ok(response) => {
-            let json = response.json::<structs::PlayerMatchSummeries>().await;
-            match json {
-                Ok(json) => Ok(json),
-                Err(err) => Err(err),
-            }
-        }
-        Err(err) => Err(err),
-    }
+
+    request::<FetchMatchSummaries, structs::PlayerMatchSummeries>(vars, client).await
 }
 
 pub async fn player_suggestiosn(
@@ -53,22 +40,8 @@ pub async fn player_suggestiosn(
         query: name.to_lowercase(),
         region_id: "na1".to_string(),
     };
-    let request_body = PlayerInfoSuggestions::build_query(vars);
-    let request = client
-        .post("https://u.gg/api")
-        .json(&request_body)
-        .send()
-        .await;
-    match request {
-        Ok(response) => {
-            let json = response.json::<structs::PlayerSuggestions>().await;
-            match json {
-                Ok(json) => Ok(json),
-                Err(err) => Err(err),
-            }
-        }
-        Err(err) => Err(err),
-    }
+
+    request::<PlayerInfoSuggestions, structs::PlayerSuggestions>(vars, client).await
 }
 
 pub async fn update_player(
@@ -80,22 +53,8 @@ pub async fn update_player(
         region_id: "na1".to_string(),
         summoner_name: name.to_lowercase(),
     };
-    let request_body = UpdatePlayerProfile::build_query(vars);
-    let request = client
-        .post("https://u.gg/api")
-        .json(&request_body)
-        .send()
-        .await;
-    match request {
-        Ok(response) => {
-            let json = response.json::<structs::UpdatePlayer>().await;
-            match json {
-                Ok(json) => Ok(json),
-                Err(err) => Err(err),
-            }
-        }
-        Err(err) => Err(err),
-    }
+
+    request::<UpdatePlayerProfile, structs::UpdatePlayer>(vars, client).await
 }
 
 pub async fn profile_ranks(
@@ -107,15 +66,24 @@ pub async fn profile_ranks(
         region_id: "na1".to_string(),
         summoner_name: name.to_lowercase(),
     };
-    let request_body = FetchProfileRanks::build_query(vars);
+
+    request::<FetchProfileRanks, structs::PlayerRank>(vars, client).await
+}
+
+async fn request<T: GraphQLQuery, R: for<'de> Deserialize<'de>>(
+    vars: T::Variables,
+    client: &reqwest::Client,
+) -> Result<R, reqwest::Error> {
+    let request_body = T::build_query(vars);
     let request = client
         .post("https://u.gg/api")
         .json(&request_body)
         .send()
         .await;
+
     match request {
         Ok(response) => {
-            let json = response.json::<structs::PlayerRank>().await;
+            let json = response.json::<R>().await;
             match json {
                 Ok(json) => Ok(json),
                 Err(err) => Err(err),

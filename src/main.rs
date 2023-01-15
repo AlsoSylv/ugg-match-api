@@ -44,7 +44,7 @@ fn match_summaries(
             Some(int) => vec![Some(int)],
             None => Vec::new(),
         };
-        let request = networking::fetch_match_summaries(name, "na1", role, 1, client).await;
+        let request = networking::fetch_match_summaries(name, "na1", role, 1, &client).await;
         match request {
             Ok(response) => {
                 let _ = tx.send(Results::MatchSum(Ok(response)));
