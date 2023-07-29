@@ -1,18 +1,23 @@
-use crate::structs::{self, MatchSummary, OverallRanking, PlayerSuggestions, RankScore};
+use crate::structs::{self, MatchSummary, OverallRanking, RankScore};
 use crate::{
-    match_summaries, player_ranking, player_ranks, player_suggestions, update_player, Errors,
+    get_icon, match_summaries, player_info, player_ranking, player_ranks, player_suggestions,
+    update_player, Errors,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
-use eframe::egui;
+use eframe::egui::{self, RichText, TextureOptions, Vec2};
+use eframe::epaint::ColorImage;
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
+use tokio::runtime::{Builder, Runtime};
 
 pub enum Results {
     MatchSum(Result<structs::PlayerMatchSummeries, Errors>),
-    PlayerSuggestions(Result<structs::PlayerSuggestions, Errors>),
+    // PlayerSuggestions(Result<structs::PlayerSuggestions, Errors>),
     PlayerUpdate(Result<structs::UpdatePlayer, Errors>),
     ProfileRanks(Result<structs::PlayerRank, Errors>),
     Ranking(Result<structs::PlayerRanking, Errors>),
+    PlayerInfo(Result<structs::PlayerInfo, Errors>),
+    PlayerIcon(Result<bytes::Bytes, Errors>),
 }
 
 pub struct MyEguiApp {
@@ -24,21 +29,29 @@ pub struct MyEguiApp {
     role: String,
     roles_map: HashMap<String, Option<i64>>,
     roles_reversed: HashMap<i64, String>,
-    players: Option<PlayerSuggestions>,
     summeries: Option<Vec<MatchSummary>>,
     rank: Option<RankScore>,
     ranking: Option<OverallRanking>,
+    player_icon: Option<egui::TextureHandle>,
 
     refresh_enabled: bool,
     update_enabled: bool,
 
     client: reqwest::Client,
+    runtime: Runtime,
 }
 
 static ROLES: [&str; 6] = ["Top", "Jungle", "Mid", "ADC", "Support", "None"];
 
-impl Default for MyEguiApp {
-    fn default() -> Self {
+impl MyEguiApp {
+    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        let runtime = Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_io()
+            .enable_time()
+            .build()
+            .unwrap();
+
         let (tx, rx) = std::sync::mpsc::channel();
         let roles_map = HashMap::from([
             ("Top".to_owned(), Some(4)),
@@ -68,20 +81,15 @@ impl Default for MyEguiApp {
             role: "None".to_owned(),
             roles_map,
             roles_reversed,
-            players: None,
             summeries: None,
             rank: None,
             ranking: None,
             refresh_enabled: false,
             update_enabled: false,
             client,
+            player_icon: None,
+            runtime,
         }
-    }
-}
-
-impl MyEguiApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        Self::default()
     }
 
     fn update_matches(&self, ctx: &egui::Context) {
@@ -93,6 +101,7 @@ impl MyEguiApp {
                 ctx.clone(),
                 *role,
                 self.client.clone(),
+                self.runtime.handle(),
             );
         } else {
             match_summaries(
@@ -101,6 +110,7 @@ impl MyEguiApp {
                 ctx.clone(),
                 None,
                 self.client.clone(),
+                self.runtime.handle(),
             );
         };
         player_ranks(
@@ -108,15 +118,26 @@ impl MyEguiApp {
             self.tx.clone(),
             ctx.clone(),
             self.client.clone(),
+            self.runtime.handle(),
         );
         player_ranking(
             self.active_player.clone(),
             self.tx.clone(),
             ctx.clone(),
             self.client.clone(),
+            self.runtime.handle(),
         );
+        player_info(
+            self.active_player.clone(),
+            self.tx.clone(),
+            ctx.clone(),
+            self.client.clone(),
+            self.runtime.handle(),
+        )
     }
 
+    /// Note: This is unsused because the searchbar is broken, but I'm hoping it gets fixed one day
+    #[allow(unused)]
     fn update_player_suggestion(&self, ctx: &egui::Context) {
         player_suggestions(
             self.name.clone(),
@@ -154,6 +175,7 @@ impl MyEguiApp {
             self.tx.clone(),
             ctx.clone(),
             self.client.clone(),
+            self.runtime.handle(),
         );
         self.update_matches(ctx);
     }
@@ -162,26 +184,19 @@ impl MyEguiApp {
         let search_bar = ui.text_edit_singleline(&mut self.name);
         search_bar.request_focus();
         if search_bar.changed() {
-            self.update_player_suggestion(ctx);
+            // self.update_player_suggestion(ctx);
             if self.name.is_empty() {
-                self.active_player = self.name.clone();
+                self.active_player = String::new();
             }
         };
 
-        if let Some(pain) = self.players.clone() {
-            let players = pain.data.player_info_suggestions;
-            for option in players {
-                if ui
-                    .selectable_value(
-                        &mut self.name,
-                        option.summoner_name.clone().to_string(),
-                        option.summoner_name.clone(),
-                    )
-                    .clicked()
-                {
-                    self.active_player = self.name.clone();
-                    self.update_matches(ctx);
-                };
+        if search_bar.clicked() {
+            if !self.name.is_empty() {
+                self.active_player = self.name.clone();
+                self.update_matches(ctx);
+            } else {
+                self.summeries = None;
+                self.active_player = String::new();
             }
         }
     }
@@ -196,18 +211,18 @@ impl MyEguiApp {
                     }
                     Err(err) => {
                         println!("{:?}", err);
-                        self.summeries = None;
+                        // self.summeries = None;
                     }
                 },
-                Results::PlayerSuggestions(players) => match players {
-                    Ok(players) => {
-                        self.players = Some(players);
-                    }
-                    Err(err) => {
-                        println!("{:?}", err);
-                        self.players = None;
-                    }
-                },
+                // Results::PlayerSuggestions(players) => match players {
+                //     Ok(players) => {
+                //         self.players = Some(players);
+                //     }
+                //     Err(err) => {
+                //         println!("{:?}", err);
+                //         self.players = None;
+                //     }
+                // },
                 Results::PlayerUpdate(update) => match update {
                     Ok(updated) => {
                         let data = updated.data.update_player_profile;
@@ -238,6 +253,47 @@ impl MyEguiApp {
                         println!("{:?}", err)
                     }
                 },
+                Results::PlayerInfo(info) => match info {
+                    Ok(info) => {
+                        if let Some(data) = info.data.profile_player_info {
+                            let id = data.icon_id;
+
+                            get_icon(
+                                id,
+                                self.tx.clone(),
+                                self.client.clone(),
+                                self.runtime.handle(),
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        println!("{:?}", err)
+                    }
+                },
+                Results::PlayerIcon(data) => match data {
+                    Ok(icon) => {
+                        let mut decoder = png::Decoder::new(&*icon);
+
+                        let x = decoder.read_header_info().unwrap().height;
+                        let y = decoder.read_header_info().unwrap().width;
+
+                        let mut reader = decoder.read_info().unwrap();
+
+                        let mut buf = vec![0; reader.output_buffer_size()];
+
+                        reader.next_frame(&mut buf).unwrap();
+
+                        let texture = ctx.load_texture(
+                            "icon",
+                            ColorImage::from_rgb([x as usize, y as usize], &buf),
+                            TextureOptions::LINEAR,
+                        );
+                        let _ = self.player_icon.replace(texture);
+                    }
+                    Err(err) => {
+                        println!("{:?}", err)
+                    }
+                },
             }
         }
     }
@@ -260,7 +316,6 @@ impl eframe::App for MyEguiApp {
                     self.name = Default::default();
                     self.role = "None".to_owned();
                     self.summeries = None;
-                    self.players = None;
                     self.ranking = None;
                     self.rank = None;
                     self.active_player = Default::default();
@@ -276,6 +331,31 @@ impl eframe::App for MyEguiApp {
             .resizable(false)
             .show(ctx, |ui| {
                 ui.vertical(|ui| {
+                    let texture: &eframe::epaint::TextureHandle =
+                        self.player_icon.get_or_insert_with(|| {
+                            let bytes: &[u8] = include_bytes!("../0.png");
+                            let mut png = png::Decoder::new(bytes);
+
+                            let headers = png.read_header_info().unwrap();
+                            let x = headers.height as usize;
+                            let y= headers.width as usize;
+
+                            let mut reader = png.read_info().unwrap();
+                            let mut buf = vec![0; reader.output_buffer_size()];
+                            reader.next_frame(&mut buf).unwrap();
+
+                            ctx.load_texture(
+                                "none",
+                                ColorImage::from_rgb(
+                                    [x, y],
+                                    &buf,
+                                ),
+                                TextureOptions::LINEAR,
+                            )
+                        });
+
+                    ui.image(texture, Vec2::new(100.0, 100.0));
+
                     ui.add_space(5.0);
 
                     ui.horizontal(|ui| {
@@ -288,10 +368,13 @@ impl eframe::App for MyEguiApp {
                                 }
                             });
                     });
+                    
                     ui.add_space(5.0);
 
                     ui.horizontal(|ui| {
-                        ui.label("Players: ");
+                        ui.label(
+                            RichText::new("Player: ").color(egui::Color32::from_rgb(255, 0, 0)),
+                        );
                         egui::ComboBox::from_id_source("player_suggestions")
                             .selected_text(self.name.clone())
                             .show_ui(ui, |ui| {
@@ -301,19 +384,23 @@ impl eframe::App for MyEguiApp {
 
                     ui.add_space(5.0);
 
-                    let button = ui.add_enabled(self.refresh_enabled, egui::Button::new("Refresh Player"));
+                    ui.horizontal(|ui| {
+                        let button = ui
+                            .add_enabled(self.refresh_enabled, egui::Button::new("Refresh Player"));
 
-                    if button.clicked() {
-                        self.update_matches(ctx);
-                    };
+                        if button.clicked() {
+                            self.update_matches(ctx);
+                        };
 
-                    ui.add_space(5.0);
+                        ui.add_space(5.0);
 
-                    let button = ui.add_enabled(self.update_enabled, egui::Button::new("Update Player"));
+                        let button =
+                            ui.add_enabled(self.update_enabled, egui::Button::new("Update Player"));
 
-                    if button.clicked() {
-                        self.update_player(ctx);
-                    };
+                        if button.clicked() {
+                            self.update_player(ctx);
+                        };
+                    });
 
                     if !self.active_player.is_empty() {
                         self.refresh_enabled = true;

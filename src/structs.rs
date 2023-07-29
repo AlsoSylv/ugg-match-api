@@ -206,3 +206,23 @@ pub struct OverallRanking {
     pub overall_ranking: i64,
     pub total_player_count: i64,
 }
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerInfo {
+    pub data: ProfilePlayerInfo,
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfilePlayerInfo {
+    pub profile_player_info: Option<ProfileInfo>,
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileInfo {
+    pub icon_id: i64,
+    pub summoner_level: i64,
+    pub summoner_name: String,
+}

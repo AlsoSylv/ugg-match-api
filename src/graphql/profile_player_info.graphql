@@ -1,0 +1,7 @@
+query ProfilePlayerInfo($summonerName: String!, $regionId: String!) {
+    profilePlayerInfo(regionId: $regionId, summonerName: $summonerName) {
+        iconId
+        summonerLevel
+        summonerName
+    }
+}

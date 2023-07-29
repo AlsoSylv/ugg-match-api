@@ -1,5 +1,5 @@
 query FetchProfileRanks($regionId: String!, $summonerName: String!) {
-  fetchProfileRanks(regionId: $regionId, summonerName: $summonerName, seasonId: 19) {
+  fetchProfileRanks(regionId: $regionId, summonerName: $summonerName, seasonId: 21) {
     rankScores {
       lastUpdatedAt
       losses

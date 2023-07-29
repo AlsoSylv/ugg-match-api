@@ -2,7 +2,8 @@
 use std::sync::mpsc::Sender;
 
 use eframe::egui;
-use tokio::runtime::Runtime;
+use serde_json::json;
+use tokio::runtime::Handle;
 use ui::Results;
 
 mod graphql;
@@ -11,25 +12,12 @@ mod networking;
 mod structs;
 mod ui;
 
-#[tokio::main]
-async fn main() {
-    let rt = Runtime::new().expect("Pain");
-
-    let _enter = rt.enter();
-
-    std::thread::spawn(move || {
-        rt.block_on(async {
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
-        })
-    });
-
+fn main() {
     let native_options = eframe::NativeOptions::default();
-    eframe::run_native(
+    let _ = eframe::run_native(
         "UGG API TEST",
         native_options,
-        Box::new(|cc| Box::new(crate::ui::MyEguiApp::new(cc))),
+        Box::new(|cc| Box::new(ui::MyEguiApp::new(cc))),
     );
 }
 
@@ -39,8 +27,9 @@ fn match_summaries(
     ctx: egui::Context,
     role: Option<i64>,
     client: reqwest::Client,
+    handle: &Handle,
 ) {
-    tokio::spawn(async move {
+    handle.spawn(async move {
         let role = match role {
             Some(int) => vec![int],
             None => Vec::new(),
@@ -59,6 +48,8 @@ fn match_summaries(
     });
 }
 
+/// Note: This is unsused because the searchbar is broken, but I'm hoping it gets fixed one day
+#[allow(unused)]
 fn player_suggestions(
     name: String,
     tx: Sender<Results>,
@@ -69,22 +60,29 @@ fn player_suggestions(
         let request = networking::player_suggestiosn(name, &client).await;
         match request {
             Ok(response) => {
-                let _ = tx.send(Results::PlayerSuggestions(Ok(response)));
+                // let _ = tx.send(Results::PlayerSuggestions(Ok(response)));
                 ctx.request_repaint();
             }
             Err(error) => {
-                let _ = tx.send(Results::PlayerSuggestions(Err(Errors::Request(error))));
+                // let _ = tx.send(Results::PlayerSuggestions(Err(Errors::Request(error))));
                 ctx.request_repaint();
             }
         }
     });
 }
 
-fn update_player(name: String, tx: Sender<Results>, ctx: egui::Context, client: reqwest::Client) {
-    tokio::spawn(async move {
+fn update_player(
+    name: String,
+    tx: Sender<Results>,
+    ctx: egui::Context,
+    client: reqwest::Client,
+    handle: &Handle,
+) {
+    handle.spawn(async move {
         let request = networking::update_player(name, &client).await;
         match request {
             Ok(response) => {
+                println!("{}", json!(response));
                 let _ = tx.send(Results::PlayerUpdate(Ok(response)));
                 ctx.request_repaint();
             }
@@ -96,8 +94,14 @@ fn update_player(name: String, tx: Sender<Results>, ctx: egui::Context, client: 
     });
 }
 
-fn player_ranking(name: String, tx: Sender<Results>, ctx: egui::Context, client: reqwest::Client) {
-    tokio::spawn(async move {
+fn player_ranking(
+    name: String,
+    tx: Sender<Results>,
+    ctx: egui::Context,
+    client: reqwest::Client,
+    handle: &Handle,
+) {
+    handle.spawn(async move {
         let request = networking::player_ranking(name, &client).await;
         match request {
             Ok(response) => {
@@ -112,8 +116,14 @@ fn player_ranking(name: String, tx: Sender<Results>, ctx: egui::Context, client:
     });
 }
 
-fn player_ranks(name: String, tx: Sender<Results>, ctx: egui::Context, client: reqwest::Client) {
-    tokio::spawn(async move {
+fn player_ranks(
+    name: String,
+    tx: Sender<Results>,
+    ctx: egui::Context,
+    client: reqwest::Client,
+    handle: &Handle,
+) {
+    handle.spawn(async move {
         let request = networking::profile_ranks(name, &client).await;
         match request {
             Ok(response) => {
@@ -123,6 +133,44 @@ fn player_ranks(name: String, tx: Sender<Results>, ctx: egui::Context, client: r
             Err(error) => {
                 let _ = tx.send(Results::ProfileRanks(Err(Errors::Request(error))));
                 ctx.request_repaint();
+            }
+        }
+    });
+}
+
+fn player_info(
+    name: String,
+    tx: Sender<Results>,
+    ctx: egui::Context,
+    client: reqwest::Client,
+    handle: &Handle,
+) {
+    handle.spawn(async move {
+        let val = networking::player_info(name, "na1", &client)
+            .await
+            .map_err(Errors::Request);
+        let _ = tx.send(Results::PlayerInfo(val));
+        ctx.request_repaint();
+    });
+}
+
+fn get_icon(id: i64, tx: Sender<Results>, client: reqwest::Client, handle: &Handle) {
+    handle.spawn(async move {
+        let val = client
+            .get(format!(
+                "http://ddragon.leagueoflegends.com/cdn/13.14.1/img/profileicon/{id}.png"
+            ))
+            .send()
+            .await
+            .map_err(Errors::Request);
+
+        match val {
+            Ok(res) => {
+                let fin = Results::PlayerIcon(res.bytes().await.map_err(Errors::Request));
+                let _ = tx.send(fin);
+            }
+            Err(err) => {
+                let _ = tx.send(Results::PlayerIcon(Err(err)));
             }
         }
     });
