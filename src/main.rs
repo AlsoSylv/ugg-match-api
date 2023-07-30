@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use std::sync::mpsc::Sender;
 
+use bytes::Bytes;
 use eframe::egui;
 use serde_json::json;
 use tokio::runtime::Handle;
@@ -13,6 +14,8 @@ mod structs;
 mod ui;
 
 fn main() {
+    println!("{}", std::mem::size_of::<ui::MyEguiApp>());
+
     let native_options = eframe::NativeOptions::default();
     let _ = eframe::run_native(
         "UGG API TEST",
@@ -25,16 +28,16 @@ fn match_summaries(
     name: String,
     tx: Sender<Results>,
     ctx: egui::Context,
-    role: Option<i64>,
+    role: Option<i8>,
     client: reqwest::Client,
     handle: &Handle,
 ) {
     handle.spawn(async move {
-        let role = match role {
-            Some(int) => vec![int],
+        let roles = match role {
+            Some(role) => vec![role],
             None => Vec::new(),
         };
-        let request = networking::fetch_match_summaries(name, "na1", role, 1, &client).await;
+        let request = networking::fetch_match_summaries(name, "na1", roles, 1, &client).await;
         match request {
             Ok(response) => {
                 let _ = tx.send(Results::MatchSum(Ok(response)));
@@ -149,31 +152,29 @@ fn player_info(
         let val = networking::player_info(name, "na1", &client)
             .await
             .map_err(Errors::Request);
-        let _ = tx.send(Results::PlayerInfo(val));
+        if let Ok(info) = val {
+            if let Some(info) = &info.data.profile_player_info {
+                let res = get_icon(info.icon_id, client).await;
+                let wrapped = Results::PlayerIcon(res.map_err(Errors::Request));
+                let _ = tx.send(wrapped);
+            }
+            let _ = tx.send(Results::PlayerInfo(Ok(info)));
+        } else {
+            let _ = tx.send(Results::PlayerInfo(val));
+        }
         ctx.request_repaint();
     });
 }
 
-fn get_icon(id: i64, tx: Sender<Results>, client: reqwest::Client, handle: &Handle) {
-    handle.spawn(async move {
-        let val = client
-            .get(format!(
-                "http://ddragon.leagueoflegends.com/cdn/13.14.1/img/profileicon/{id}.png"
-            ))
-            .send()
-            .await
-            .map_err(Errors::Request);
+async fn get_icon(id: i64, client: reqwest::Client) -> Result<Bytes, reqwest::Error> {
+    let res = client
+        .get(format!(
+            "http://ddragon.leagueoflegends.com/cdn/13.14.1/img/profileicon/{id}.png"
+        ))
+        .send()
+        .await?;
 
-        match val {
-            Ok(res) => {
-                let fin = Results::PlayerIcon(res.bytes().await.map_err(Errors::Request));
-                let _ = tx.send(fin);
-            }
-            Err(err) => {
-                let _ = tx.send(Results::PlayerIcon(Err(err)));
-            }
-        }
-    });
+    res.bytes().await
 }
 
 #[derive(Debug)]

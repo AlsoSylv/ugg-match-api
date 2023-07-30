@@ -50,7 +50,7 @@ pub struct MatchSummary {
     pub ps_team_play: i64,
     pub queue_type: String,
     pub region_id: String,
-    pub role: i64,
+    pub role: i8,
     pub runes: Vec<i64>,
     pub sub_style: i64,
     pub summoner_name: String,

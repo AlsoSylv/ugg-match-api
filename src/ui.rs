@@ -1,7 +1,7 @@
 use crate::structs::{self, MatchSummary, OverallRanking, RankScore};
 use crate::{
-    get_icon, match_summaries, player_info, player_ranking, player_ranks, player_suggestions,
-    update_player, Errors,
+    match_summaries, player_info, player_ranking, player_ranks, update_player,
+    Errors,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use eframe::egui::{self, RichText, TextureOptions, Vec2};
@@ -20,15 +20,15 @@ pub enum Results {
     PlayerIcon(Result<bytes::Bytes, Errors>),
 }
 
+/// TODO: Replace the hashmaps with bimaps
 pub struct MyEguiApp {
     tx: Sender<Results>,
     rx: Receiver<Results>,
 
-    name: String,
     active_player: String,
     role: String,
-    roles_map: HashMap<String, Option<i64>>,
-    roles_reversed: HashMap<i64, String>,
+    roles_map: HashMap<String, Option<i8>>,
+    roles_reversed: HashMap<i8, String>,
     summeries: Option<Vec<MatchSummary>>,
     rank: Option<RankScore>,
     ranking: Option<OverallRanking>,
@@ -76,7 +76,6 @@ impl MyEguiApp {
         Self {
             tx,
             rx,
-            name: Default::default(),
             active_player: Default::default(),
             role: "None".to_owned(),
             roles_map,
@@ -92,27 +91,17 @@ impl MyEguiApp {
         }
     }
 
+    /// This long line of function calls, well looking like bullshit
+    /// actually drives the entire state of the GUI to change!
     fn update_matches(&self, ctx: &egui::Context) {
-        let role = &self.role;
-        if let Some(role) = self.roles_map.get(role as &str) {
-            match_summaries(
-                self.active_player.clone(),
-                self.tx.clone(),
-                ctx.clone(),
-                *role,
-                self.client.clone(),
-                self.runtime.handle(),
-            );
-        } else {
-            match_summaries(
-                self.active_player.clone(),
-                self.tx.clone(),
-                ctx.clone(),
-                None,
-                self.client.clone(),
-                self.runtime.handle(),
-            );
-        };
+        match_summaries(
+            self.active_player.clone(),
+            self.tx.clone(),
+            ctx.clone(),
+            self.roles_map[&self.role],
+            self.client.clone(),
+            self.runtime.handle(),
+        );
         player_ranks(
             self.active_player.clone(),
             self.tx.clone(),
@@ -133,17 +122,6 @@ impl MyEguiApp {
             ctx.clone(),
             self.client.clone(),
             self.runtime.handle(),
-        )
-    }
-
-    /// Note: This is unsused because the searchbar is broken, but I'm hoping it gets fixed one day
-    #[allow(unused)]
-    fn update_player_suggestion(&self, ctx: &egui::Context) {
-        player_suggestions(
-            self.name.clone(),
-            self.tx.clone(),
-            ctx.clone(),
-            self.client.clone(),
         );
     }
 
@@ -153,7 +131,7 @@ impl MyEguiApp {
             summary.champion_id,
             self.roles_reversed
                 .get(&summary.role)
-                .unwrap_or(&"None".to_owned())
+                .unwrap_or(&String::from("None"))
         ))
         .id_source(summary.match_id)
         .show(ui, |ui| {
@@ -181,22 +159,14 @@ impl MyEguiApp {
     }
 
     fn player_search_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let search_bar = ui.text_edit_singleline(&mut self.name);
+        let search_bar = ui.text_edit_singleline(&mut self.active_player);
         search_bar.request_focus();
-        if search_bar.changed() {
-            // self.update_player_suggestion(ctx);
-            if self.name.is_empty() {
-                self.active_player = String::new();
-            }
-        };
 
         if search_bar.clicked() {
-            if !self.name.is_empty() {
-                self.active_player = self.name.clone();
+            if !self.active_player.is_empty() {
                 self.update_matches(ctx);
             } else {
                 self.summeries = None;
-                self.active_player = String::new();
             }
         }
     }
@@ -206,43 +176,37 @@ impl MyEguiApp {
             match receiver {
                 Results::MatchSum(match_sums) => match match_sums {
                     Ok(matches) => {
-                        let a = &matches.data.fetch_player_match_summaries.match_summaries;
-                        self.summeries = Some(a.clone());
+                        self.summeries = Some(
+                            matches
+                                .data
+                                .fetch_player_match_summaries
+                                .match_summaries,
+                        )
                     }
                     Err(err) => {
-                        println!("{:?}", err);
-                        // self.summeries = None;
+                        dbg!("{:?}", err);
                     }
                 },
-                // Results::PlayerSuggestions(players) => match players {
-                //     Ok(players) => {
-                //         self.players = Some(players);
-                //     }
-                //     Err(err) => {
-                //         println!("{:?}", err);
-                //         self.players = None;
-                //     }
-                // },
                 Results::PlayerUpdate(update) => match update {
                     Ok(updated) => {
                         let data = updated.data.update_player_profile;
                         if data.success {
                             self.update_matches(ctx);
                         } else {
-                            println!("{:?}", data.error_reason);
+                            dbg!("{:?}", data.error_reason);
                         }
                     }
                     Err(err) => {
-                        println!("{:?}", err)
+                        dbg!("{:?}", err);
                     }
                 },
                 Results::ProfileRanks(rank) => match rank {
                     Ok(rank) => {
-                        let data = rank.data.fetch_profile_ranks.rank_scores;
-                        self.rank = Some(data[0].clone());
+                        let mut data = rank.data.fetch_profile_ranks.rank_scores;
+                        self.rank = Some(data.remove(0));
                     }
                     Err(err) => {
-                        println!("{:?}", err)
+                        dbg!("{:?}", err);
                     }
                 },
                 Results::Ranking(ranking) => match ranking {
@@ -250,24 +214,13 @@ impl MyEguiApp {
                         self.ranking = ranking.data.overall_ranking;
                     }
                     Err(err) => {
-                        println!("{:?}", err)
+                        dbg!("{:?}", err);
                     }
                 },
                 Results::PlayerInfo(info) => match info {
-                    Ok(info) => {
-                        if let Some(data) = info.data.profile_player_info {
-                            let id = data.icon_id;
-
-                            get_icon(
-                                id,
-                                self.tx.clone(),
-                                self.client.clone(),
-                                self.runtime.handle(),
-                            );
-                        }
-                    }
+                    Ok(_) => {}
                     Err(err) => {
-                        println!("{:?}", err)
+                        dbg!("{:?}", err);
                     }
                 },
                 Results::PlayerIcon(data) => match data {
@@ -291,7 +244,7 @@ impl MyEguiApp {
                         let _ = self.player_icon.replace(texture);
                     }
                     Err(err) => {
-                        println!("{:?}", err)
+                        dbg!("{:?}", err);
                     }
                 },
             }
@@ -313,7 +266,6 @@ impl eframe::App for MyEguiApp {
                 let reset_button = ui.button("Reset GUI");
 
                 if reset_button.clicked() {
-                    self.name = Default::default();
                     self.role = "None".to_owned();
                     self.summeries = None;
                     self.ranking = None;
@@ -338,7 +290,7 @@ impl eframe::App for MyEguiApp {
 
                             let headers = png.read_header_info().unwrap();
                             let x = headers.height as usize;
-                            let y= headers.width as usize;
+                            let y = headers.width as usize;
 
                             let mut reader = png.read_info().unwrap();
                             let mut buf = vec![0; reader.output_buffer_size()];
@@ -346,10 +298,7 @@ impl eframe::App for MyEguiApp {
 
                             ctx.load_texture(
                                 "none",
-                                ColorImage::from_rgb(
-                                    [x, y],
-                                    &buf,
-                                ),
+                                ColorImage::from_rgb([x, y], &buf),
                                 TextureOptions::LINEAR,
                             )
                         });
@@ -361,14 +310,14 @@ impl eframe::App for MyEguiApp {
                     ui.horizontal(|ui| {
                         ui.label("Roles: ");
                         egui::ComboBox::from_id_source("roles")
-                            .selected_text(self.role.clone())
+                            .selected_text(&self.role)
                             .show_ui(ui, |ui| {
                                 for option in ROLES {
                                     ui.selectable_value(&mut self.role, option.to_string(), option);
                                 }
                             });
                     });
-                    
+
                     ui.add_space(5.0);
 
                     ui.horizontal(|ui| {
@@ -376,7 +325,7 @@ impl eframe::App for MyEguiApp {
                             RichText::new("Player: ").color(egui::Color32::from_rgb(255, 0, 0)),
                         );
                         egui::ComboBox::from_id_source("player_suggestions")
-                            .selected_text(self.name.clone())
+                            .selected_text(self.active_player.clone())
                             .show_ui(ui, |ui| {
                                 self.player_search_bar(ui, ctx);
                             });

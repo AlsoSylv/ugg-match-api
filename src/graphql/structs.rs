@@ -13,8 +13,8 @@ pub struct FetchMatchSummaries {
     pub queue_type: Vec<i64>,
     pub duo_name: String,
     pub region_id: &'static str,
-    pub role: Vec<i64>,
-    pub season_ids: Vec<i64>,
+    pub role: Vec<i8>,
+    pub season_ids: Vec<i32>,
     pub summoner_name: String,
 }
 
@@ -30,6 +30,7 @@ pub struct UpdatePlayerProfile {
 pub struct FetchProfileRanks {
     pub region_id: &'static str,
     pub summoner_name: String,
+    pub season_id: i32,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -38,4 +39,11 @@ pub struct GetOverallPlayerRanking {
     pub queue_type: i64,
     pub summoner_name: String,
     pub region_id: &'static str,
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchProfilePlayerInfo {
+    pub region_id: &'static str,
+    pub summoner_name: String,
 }

@@ -1,42 +1,42 @@
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::{
     graphql::structs::{
-        FetchMatchSummaries, FetchProfileRanks, GetOverallPlayerRanking, PlayerInfoSuggestions,
-        UpdatePlayerProfile,
+        FetchMatchSummaries, FetchProfilePlayerInfo, FetchProfileRanks, GetOverallPlayerRanking,
+        PlayerInfoSuggestions, UpdatePlayerProfile,
     },
     structs,
 };
 
-const URL: &str = "https://u.gg/api";
+const BASE_URL: &str = "https://u.gg/api";
+
+const SEASON_ID: i32 = 21;
 
 const MATCH_SUMMERIES: &str = include_str!("../graphql/match_query.graphql");
 
 pub async fn fetch_match_summaries(
     mut name: String,
     region_id: &'static str,
-    role: Vec<i64>,
+    role: Vec<i8>,
     page: i64,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerMatchSummeries, reqwest::Error> {
     remove_whitespace(&mut name);
-    let vars = FetchMatchSummaries {
-        champion_id: Vec::new(),
-        page,
-        queue_type: Vec::new(),
-        duo_name: "".to_string(),
-        region_id: region_id,
-        role,
-        season_ids: vec![18],
-        summoner_name: name.to_string(),
-    };
 
-    request::<FetchMatchSummaries, structs::PlayerMatchSummeries>(
+    request(
         MATCH_SUMMERIES,
-        vars,
+        FetchMatchSummaries {
+            champion_id: Vec::new(),
+            page,
+            queue_type: Vec::new(),
+            duo_name: "".to_string(),
+            region_id,
+            role,
+            season_ids: vec![SEASON_ID],
+            summoner_name: name.to_string(),
+        },
         client,
-        URL,
+        BASE_URL,
     )
     .await
 }
@@ -48,16 +48,15 @@ pub async fn player_suggestiosn(
     client: &reqwest::Client,
 ) -> Result<structs::PlayerSuggestions, reqwest::Error> {
     remove_whitespace(&mut name);
-    let vars = PlayerInfoSuggestions {
-        query: name.to_lowercase(),
-        region_id: "na1",
-    };
 
-    request::<PlayerInfoSuggestions, structs::PlayerSuggestions>(
+    request(
         PLAYER_SUGGESTIONS,
-        vars,
+        PlayerInfoSuggestions {
+            query: name.to_lowercase(),
+            region_id: "na1",
+        },
         client,
-        URL,
+        BASE_URL,
     )
     .await
 }
@@ -69,12 +68,17 @@ pub async fn update_player(
     client: &reqwest::Client,
 ) -> Result<structs::UpdatePlayer, reqwest::Error> {
     remove_whitespace(&mut name);
-    let vars = UpdatePlayerProfile {
-        region_id: "na1",
-        summoner_name: name.to_lowercase(),
-    };
 
-    request::<UpdatePlayerProfile, structs::UpdatePlayer>(UPDATE_PLAYER, vars, client, URL).await
+    request(
+        UPDATE_PLAYER,
+        UpdatePlayerProfile {
+            region_id: "na1",
+            summoner_name: name.to_lowercase(),
+        },
+        client,
+        BASE_URL,
+    )
+    .await
 }
 
 const PROFILE_RANKS: &str = include_str!("../graphql/fetch_profile_rank_queries.graphql");
@@ -84,12 +88,18 @@ pub async fn profile_ranks(
     client: &reqwest::Client,
 ) -> Result<structs::PlayerRank, reqwest::Error> {
     remove_whitespace(&mut name);
-    let vars = FetchProfileRanks {
-        region_id: "na1",
-        summoner_name: name.to_lowercase(),
-    };
 
-    request(PROFILE_RANKS, vars, client, URL).await
+    request(
+        PROFILE_RANKS,
+        FetchProfileRanks {
+            region_id: "na1",
+            summoner_name: name.to_lowercase(),
+            season_id: SEASON_ID,
+        },
+        client,
+        BASE_URL,
+    )
+    .await
 }
 
 const PLAYER_RANKING: &str = include_str!("../graphql/overall_player_ranking.graphql");
@@ -99,13 +109,18 @@ pub async fn player_ranking(
     client: &reqwest::Client,
 ) -> Result<structs::PlayerRanking, reqwest::Error> {
     remove_whitespace(&mut name);
-    let vars = GetOverallPlayerRanking {
-        region_id: "na1",
-        summoner_name: name.to_lowercase(),
-        queue_type: 420,
-    };
 
-    request(PLAYER_RANKING, vars, client, URL).await
+    request(
+        PLAYER_RANKING,
+        GetOverallPlayerRanking {
+            region_id: "na1",
+            summoner_name: name.to_lowercase(),
+            queue_type: 420,
+        },
+        client,
+        BASE_URL,
+    )
+    .await
 }
 
 const PLAYER_INFO: &str = include_str!("../graphql/profile_player_info.graphql");
@@ -116,16 +131,17 @@ pub async fn player_info(
     client: &reqwest::Client,
 ) -> Result<structs::PlayerInfo, reqwest::Error> {
     remove_whitespace(&mut name);
-    let vars = json!({
-        "regionId": region_id,
-        "summonerName": name
-    });
 
-    request(PLAYER_INFO, vars, client, URL).await
-}
-
-fn remove_whitespace(s: &mut String) {
-    s.retain(|c| !c.is_whitespace());
+    request(
+        PLAYER_INFO,
+        FetchProfilePlayerInfo {
+            region_id,
+            summoner_name: name,
+        },
+        client,
+        BASE_URL,
+    )
+    .await
 }
 
 async fn request<Vars: Serialize, Data: for<'de> Deserialize<'de>>(
@@ -141,6 +157,10 @@ async fn request<Vars: Serialize, Data: for<'de> Deserialize<'de>>(
         .await?
         .json()
         .await
+}
+
+fn remove_whitespace(s: &mut String) {
+    s.retain(|c| !c.is_whitespace());
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
