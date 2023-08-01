@@ -15,14 +15,12 @@ const SEASON_ID: i32 = 21;
 const MATCH_SUMMERIES: &str = include_str!("../graphql/match_query.graphql");
 
 pub async fn fetch_match_summaries(
-    mut name: String,
+    name: String,
     region_id: &'static str,
     role: Vec<i8>,
     page: i64,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerMatchSummeries, reqwest::Error> {
-    remove_whitespace(&mut name);
-
     request(
         MATCH_SUMMERIES,
         FetchMatchSummaries {
@@ -33,7 +31,7 @@ pub async fn fetch_match_summaries(
             region_id,
             role,
             season_ids: vec![SEASON_ID],
-            summoner_name: name.to_string(),
+            summoner_name: name.to_lowercase(),
         },
         client,
         BASE_URL,
@@ -44,11 +42,9 @@ pub async fn fetch_match_summaries(
 const PLAYER_SUGGESTIONS: &str = include_str!("../graphql/player_suggestion_query.graphql");
 
 pub async fn player_suggestiosn(
-    mut name: String,
+    name: String,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerSuggestions, reqwest::Error> {
-    remove_whitespace(&mut name);
-
     request(
         PLAYER_SUGGESTIONS,
         PlayerInfoSuggestions {
@@ -64,11 +60,9 @@ pub async fn player_suggestiosn(
 const UPDATE_PLAYER: &str = include_str!("../graphql/update_profile_query.graphql");
 
 pub async fn update_player(
-    mut name: String,
+    name: String,
     client: &reqwest::Client,
 ) -> Result<structs::UpdatePlayer, reqwest::Error> {
-    remove_whitespace(&mut name);
-
     request(
         UPDATE_PLAYER,
         UpdatePlayerProfile {
@@ -84,11 +78,9 @@ pub async fn update_player(
 const PROFILE_RANKS: &str = include_str!("../graphql/fetch_profile_rank_queries.graphql");
 
 pub async fn profile_ranks(
-    mut name: String,
+    name: String,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerRank, reqwest::Error> {
-    remove_whitespace(&mut name);
-
     request(
         PROFILE_RANKS,
         FetchProfileRanks {
@@ -105,11 +97,9 @@ pub async fn profile_ranks(
 const PLAYER_RANKING: &str = include_str!("../graphql/overall_player_ranking.graphql");
 
 pub async fn player_ranking(
-    mut name: String,
+    name: String,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerRanking, reqwest::Error> {
-    remove_whitespace(&mut name);
-
     request(
         PLAYER_RANKING,
         GetOverallPlayerRanking {
@@ -126,17 +116,15 @@ pub async fn player_ranking(
 const PLAYER_INFO: &str = include_str!("../graphql/profile_player_info.graphql");
 
 pub async fn player_info(
-    mut name: String,
+    name: String,
     region_id: &'static str,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerInfo, reqwest::Error> {
-    remove_whitespace(&mut name);
-
     request(
         PLAYER_INFO,
         FetchProfilePlayerInfo {
             region_id,
-            summoner_name: name,
+            summoner_name: name.to_lowercase(),
         },
         client,
         BASE_URL,
@@ -157,10 +145,6 @@ async fn request<Vars: Serialize, Data: for<'de> Deserialize<'de>>(
         .await?
         .json()
         .await
-}
-
-fn remove_whitespace(s: &mut String) {
-    s.retain(|c| !c.is_whitespace());
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]

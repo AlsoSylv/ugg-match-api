@@ -126,8 +126,7 @@ impl MyEguiApp {
     fn match_page(&self, summary: &MatchSummary, ui: &mut egui::Ui) {
         egui::CollapsingHeader::new(format!(
             "{} {}",
-            summary.champion_id,
-            self.roles_reversed[&summary.role]
+            summary.champion_id, self.roles_reversed[&summary.role]
         ))
         .id_source(summary.match_id)
         .show(ui, |ui| {
