@@ -1,5 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use std::sync::mpsc::Sender;
+use std::sync::{mpsc::Sender, Arc};
 
 use bytes::Bytes;
 use eframe::egui;
@@ -25,7 +25,7 @@ fn main() {
 }
 
 fn match_summaries(
-    name: String,
+    name: Arc<String>,
     tx: Sender<Results>,
     ctx: egui::Context,
     role: Option<i8>,
@@ -54,7 +54,7 @@ fn match_summaries(
 /// Note: This is unsused because the searchbar is broken, but I'm hoping it gets fixed one day
 #[allow(unused)]
 fn player_suggestions(
-    name: String,
+    name: Arc<String>,
     tx: Sender<Results>,
     ctx: egui::Context,
     client: reqwest::Client,
@@ -75,7 +75,7 @@ fn player_suggestions(
 }
 
 fn update_player(
-    name: String,
+    name: Arc<String>,
     tx: Sender<Results>,
     ctx: egui::Context,
     client: reqwest::Client,
@@ -98,7 +98,7 @@ fn update_player(
 }
 
 fn player_ranking(
-    name: String,
+    name: Arc<String>,
     tx: Sender<Results>,
     ctx: egui::Context,
     client: reqwest::Client,
@@ -120,7 +120,7 @@ fn player_ranking(
 }
 
 fn player_ranks(
-    name: String,
+    name: Arc<String>,
     tx: Sender<Results>,
     ctx: egui::Context,
     client: reqwest::Client,
@@ -142,7 +142,7 @@ fn player_ranks(
 }
 
 fn player_info(
-    name: String,
+    name: Arc<String>,
     tx: Sender<Results>,
     ctx: egui::Context,
     client: reqwest::Client,

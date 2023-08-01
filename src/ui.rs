@@ -4,6 +4,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use eframe::egui::{self, Label, TextureOptions, Vec2};
 use eframe::epaint::ColorImage;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
 use tokio::runtime::{Builder, Runtime};
 
@@ -92,8 +93,10 @@ impl MyEguiApp {
     /// This long line of function calls, well looking like bullshit
     /// actually drives the entire state of the GUI to change!
     fn update_matches(&self, ctx: &egui::Context) {
+        let name = Arc::new(self.active_player.clone());
+
         match_summaries(
-            self.active_player.clone(),
+            name.clone(),
             self.tx.clone(),
             ctx.clone(),
             self.roles_map.get(ROLES[self.role as usize]).copied(),
@@ -101,21 +104,21 @@ impl MyEguiApp {
             self.runtime.handle(),
         );
         player_ranks(
-            self.active_player.clone(),
+            name.clone(),
             self.tx.clone(),
             ctx.clone(),
             self.client.clone(),
             self.runtime.handle(),
         );
         player_ranking(
-            self.active_player.clone(),
+            name.clone(),
             self.tx.clone(),
             ctx.clone(),
             self.client.clone(),
             self.runtime.handle(),
         );
         player_info(
-            self.active_player.clone(),
+            name.clone(),
             self.tx.clone(),
             ctx.clone(),
             self.client.clone(),
@@ -143,8 +146,10 @@ impl MyEguiApp {
     }
 
     fn update_player(&self, ctx: &egui::Context) {
+        let name = Arc::new(self.active_player.clone());
+
         update_player(
-            self.active_player.clone(),
+            name.clone(),
             self.tx.clone(),
             ctx.clone(),
             self.client.clone(),

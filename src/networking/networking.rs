@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -15,7 +17,7 @@ const SEASON_ID: i32 = 21;
 const MATCH_SUMMERIES: &str = include_str!("../graphql/match_query.graphql");
 
 pub async fn fetch_match_summaries(
-    name: String,
+    name: Arc<String>,
     region_id: &'static str,
     role: Vec<i8>,
     page: i64,
@@ -42,7 +44,7 @@ pub async fn fetch_match_summaries(
 const PLAYER_SUGGESTIONS: &str = include_str!("../graphql/player_suggestion_query.graphql");
 
 pub async fn player_suggestiosn(
-    name: String,
+    name: Arc<String>,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerSuggestions, reqwest::Error> {
     request(
@@ -60,7 +62,7 @@ pub async fn player_suggestiosn(
 const UPDATE_PLAYER: &str = include_str!("../graphql/update_profile_query.graphql");
 
 pub async fn update_player(
-    name: String,
+    name: Arc<String>,
     client: &reqwest::Client,
 ) -> Result<structs::UpdatePlayer, reqwest::Error> {
     request(
@@ -78,7 +80,7 @@ pub async fn update_player(
 const PROFILE_RANKS: &str = include_str!("../graphql/fetch_profile_rank_queries.graphql");
 
 pub async fn profile_ranks(
-    name: String,
+    name: Arc<String>,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerRank, reqwest::Error> {
     request(
@@ -97,7 +99,7 @@ pub async fn profile_ranks(
 const PLAYER_RANKING: &str = include_str!("../graphql/overall_player_ranking.graphql");
 
 pub async fn player_ranking(
-    name: String,
+    name: Arc<String>,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerRanking, reqwest::Error> {
     request(
@@ -116,7 +118,7 @@ pub async fn player_ranking(
 const PLAYER_INFO: &str = include_str!("../graphql/profile_player_info.graphql");
 
 pub async fn player_info(
-    name: String,
+    name: Arc<String>,
     region_id: &'static str,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerInfo, reqwest::Error> {
