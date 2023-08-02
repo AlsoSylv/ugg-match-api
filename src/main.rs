@@ -166,6 +166,78 @@ fn player_info(
     });
 }
 
+fn get_versions(tx: Sender<Results>, ctx: egui::Context, client: reqwest::Client, handle: &Handle) {
+    handle.spawn(async move {
+        let res = client
+            .get("https://ddragon.leagueoflegends.com/api/versions.json")
+            .send()
+            .await;
+        match res {
+            Ok(val) => {
+                let vers = val.json().await;
+                let _ = tx.send(Results::Versions(vers.map_err(Errors::Request)));
+            }
+            Err(err) => {
+                let _ = tx.send(Results::Versions(Err(Errors::Request(err))));
+            }
+        }
+        ctx.request_repaint();
+    });
+}
+
+fn get_champ_info(
+    version: &str,
+    tx: Sender<Results>,
+    ctx: egui::Context,
+    client: reqwest::Client,
+    handle: &Handle,
+) {
+    let url = format!("http://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json");
+    handle.spawn(async move {
+        let res = client.get(url).send().await;
+        match res {
+            Ok(val) => {
+                let json = val.json().await.map_err(Errors::Request);
+                let _ = tx.send(Results::ChampJson(json));
+            }
+            Err(err) => {
+                let _ = tx.send(Results::ChampJson(Err(Errors::Request(err))));
+            }
+        }
+        ctx.request_repaint();
+    });
+}
+
+fn get_champ_image(
+    version: &str,
+    key: &str,
+    id: i64,
+    tx: Sender<Results>,
+    ctx: egui::Context,
+    client: reqwest::Client,
+    handle: &Handle,
+) {
+    let url = format!("http://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{key}.png");
+    handle.spawn(async move {
+        let res = client.get(url.clone()).send().await;
+        match res {
+            Ok(val) => {
+                let json = val
+                    .bytes()
+                    .await
+                    .map_err(Errors::Request)
+                    .map(|bytes| (bytes, id));
+
+                let _ = tx.send(Results::ChampImage(json));
+            }
+            Err(err) => {
+                let _ = tx.send(Results::ChampJson(Err(Errors::Request(err))));
+            }
+        }
+        ctx.request_repaint();
+    });
+}
+
 async fn get_icon(id: i64, client: reqwest::Client) -> Result<Bytes, reqwest::Error> {
     let res = client
         .get(format!(

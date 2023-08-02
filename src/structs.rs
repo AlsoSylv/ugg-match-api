@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -225,4 +227,57 @@ pub struct ProfileInfo {
     pub icon_id: i64,
     pub summoner_level: i64,
     pub summoner_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChampionJson {
+    #[serde(rename = "type")]
+    pub _type: String,
+    pub format: String,
+    pub version: String,
+    pub data: HashMap<String, Datum>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Datum {
+    pub version: String,
+    pub id: String,
+    pub key: String,
+    pub name: String,
+    pub title: String,
+    pub blurb: String,
+    pub info: Info,
+    pub image: Image,
+    pub tags: Vec<Tag>,
+    pub partype: String,
+    pub stats: HashMap<String, f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Image {
+    pub full: String,
+    pub sprite: String,
+    pub group: String,
+    pub x: i64,
+    pub y: i64,
+    pub w: i64,
+    pub h: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Info {
+    pub attack: i64,
+    pub defense: i64,
+    pub magic: i64,
+    pub difficulty: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Tag {
+    Assassin,
+    Fighter,
+    Mage,
+    Marksman,
+    Support,
+    Tank,
 }
