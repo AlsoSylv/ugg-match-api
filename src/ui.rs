@@ -23,7 +23,6 @@ pub enum Results {
     ChampImage(Result<(bytes::Bytes, i64), Errors>),
 }
 
-/// TODO: Replace the hashmaps with bimaps
 /// TODO: Store player data in a sub struct
 pub struct MyEguiApp {
     tx: Sender<Results>,
@@ -32,7 +31,6 @@ pub struct MyEguiApp {
     active_player: String,
     role: u8,
     roles_map: HashMap<String, i8>,
-    roles_reversed: HashMap<i8, String>,
     summeries: Option<Vec<MatchSummary>>,
     rank: Option<Vec<RankScore>>,
     ranking: Option<OverallRanking>,
@@ -53,14 +51,72 @@ struct DataDragon {
     champ_json: Option<ChampionJson>,
 }
 
-struct Champion {
-    name: String,
-    key: String,
-    image: Option<egui::TextureHandle>,
-    image_started: bool,
+mod champ {
+    use eframe::egui;
+
+    pub struct Champion {
+        name_ptr: *const u8,
+        name_len: u8,
+        key_ptr: *const u8,
+        key_len: u8,
+        image: Option<egui::TextureHandle>,
+        image_started: bool,
+    }
+
+    impl Champion {
+        pub fn new(name: &str, key: &str) -> Champion {
+            Champion {
+                name_ptr: name.as_ptr(),
+                name_len: name.len() as u8,
+                key_ptr: key.as_ptr(),
+                key_len: key.len() as u8,
+                image: None,
+                image_started: false,
+            }
+        }
+
+        pub fn name(&self) -> &str {
+            unsafe {
+                std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                    self.name_ptr,
+                    self.name_len as usize,
+                ))
+            }
+        }
+
+        pub fn key(&self) -> &str {
+            unsafe {
+                std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                    self.key_ptr,
+                    self.key_len as usize,
+                ))
+            }
+        }
+
+        pub fn image(&self) -> Option<&egui::TextureHandle> {
+            self.image.as_ref()
+        }
+
+        pub fn set_image(&mut self, texture: Option<egui::TextureHandle>) {
+            self.image = texture;
+        }
+
+        pub fn image_started(&self) -> bool {
+            self.image_started
+        }
+
+        pub fn set_image_started(&mut self, started: bool) {
+            self.image_started = started;
+        }
+    }
 }
 
+use champ::Champion;
+
 static ROLES: [&str; 6] = ["Top", "Jungle", "Mid", "ADC", "Support", "None"];
+
+const UGG_ROLES_REVERSED: [&str; 8] =
+    ["", "Jungle", "Support", "ADC", "Top", "Mid", "Aram", "None"];
 
 impl MyEguiApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
@@ -72,7 +128,6 @@ impl MyEguiApp {
             .unwrap();
 
         let (tx, rx) = std::sync::mpsc::channel();
-        // Todo: Remove explicit None case?
         let roles_map = HashMap::from([
             ("Top".to_owned(), 4),
             ("Jungle".to_owned(), 1),
@@ -81,31 +136,18 @@ impl MyEguiApp {
             ("Support".to_owned(), 2),
         ]);
 
-        // Todo: replace with an array
-        let roles_reversed = HashMap::from([
-            (4, "Top".to_owned()),
-            (1, "Jungle".to_owned()),
-            (5, "Mid".to_owned()),
-            (3, "ADC".to_owned()),
-            (2, "Support".to_owned()),
-            (6, "ARAM".to_owned()),
-        ]);
-
-        let client = reqwest::Client::new();
-
         Self {
             tx,
             rx,
             active_player: Default::default(),
             role: 5,
             roles_map,
-            roles_reversed,
             summeries: None,
             rank: None,
             ranking: None,
             refresh_enabled: false,
             update_enabled: false,
-            client,
+            client: reqwest::Client::new(),
             player_icon: None,
             runtime,
             data_dragon: DataDragon {
@@ -161,27 +203,27 @@ impl MyEguiApp {
 
         egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, false)
             .show_header(ui, |ui| {
-                if let Some(image) = &champ.image {
+                if let Some(image) = champ.image() {
                     ui.image(image, Vec2::splat(40.0));
                     ui.label(format!(
                         "{} {}",
-                        champ.name,
-                        self.roles_reversed[&(summary.role as i8)]
+                        champ.name(),
+                        UGG_ROLES_REVERSED[summary.role as usize]
                     ));
                 } else {
                     ui.spinner();
 
-                    if !champ.image_started {
+                    if !champ.image_started() {
                         get_champ_image(
                             &self.data_dragon.versions.as_ref().unwrap()[0],
-                            &champ.key,
+                            champ.key(),
                             summary.champion_id,
                             self.tx.clone(),
                             ctx.clone(),
                             self.client.clone(),
                             self.runtime.handle(),
                         );
-                        champ.image_started = true;
+                        champ.set_image_started(true);
                     }
                 }
             })
@@ -337,15 +379,8 @@ impl MyEguiApp {
                     Ok(json) => {
                         for data in json.data.values() {
                             let id: i64 = data.key.parse().unwrap();
-                            self.id_name_champ_map.insert(
-                                id,
-                                Champion {
-                                    name: data.name.clone(),
-                                    key: data.id.clone(),
-                                    image: None,
-                                    image_started: false,
-                                },
-                            );
+                            self.id_name_champ_map
+                                .insert(id, Champion::new(&data.name, &data.id));
                         }
                         self.data_dragon.champ_json = Some(json)
                     }
@@ -378,7 +413,7 @@ impl MyEguiApp {
 
                         let handle = self.id_name_champ_map.get_mut(&id).unwrap();
 
-                        handle.image = Some(texture);
+                        handle.set_image(Some(texture));
                     }
                     Err(err) => {
                         dbg!("{:?}", err);
