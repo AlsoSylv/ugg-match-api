@@ -4,7 +4,7 @@ use crate::{
     player_ranks, update_player, Errors,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
-use eframe::egui::{self, Label, TextBuffer, TextureOptions, Vec2};
+use eframe::egui::{self, TextBuffer, TextureOptions, Vec2};
 use eframe::epaint::ColorImage;
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
@@ -34,7 +34,7 @@ pub struct MyEguiApp {
     roles_map: HashMap<String, i8>,
     roles_reversed: HashMap<i8, String>,
     summeries: Option<Vec<MatchSummary>>,
-    rank: Option<RankScore>,
+    rank: Option<Vec<RankScore>>,
     ranking: Option<OverallRanking>,
     player_icon: Option<egui::TextureHandle>,
     data_dragon: DataDragon,
@@ -165,7 +165,8 @@ impl MyEguiApp {
                     ui.image(image, Vec2::splat(40.0));
                     ui.label(format!(
                         "{} {}",
-                        champ.name, self.roles_reversed[&summary.role]
+                        champ.name,
+                        self.roles_reversed[&(summary.role as i8)]
                     ));
                 } else {
                     ui.spinner();
@@ -257,7 +258,17 @@ impl MyEguiApp {
                 Results::ProfileRanks(rank) => match rank {
                     Ok(rank) => {
                         let mut data = rank.data.fetch_profile_ranks.rank_scores;
-                        self.rank = Some(data.remove(0));
+                        let new_data: Vec<RankScore> = data
+                            .drain(..)
+                            .filter_map(|rank| {
+                                if rank.queue_type.as_str() == "" {
+                                    None
+                                } else {
+                                    Some(rank)
+                                }
+                            })
+                            .collect();
+                        self.rank = Some(new_data);
                     }
                     Err(err) => {
                         dbg!("{:?}", err);
@@ -273,7 +284,9 @@ impl MyEguiApp {
                 },
                 // Todo: Display this info
                 Results::PlayerInfo(info) => match info {
-                    Ok(_) => {}
+                    Ok(info) => {
+                        println!("{:?}", info);
+                    }
                     Err(err) => {
                         dbg!("{:?}", err);
                     }
@@ -475,45 +488,43 @@ impl eframe::App for MyEguiApp {
                                     } else if !self.active_player.is_empty() {
                                         ui.spinner();
                                     }
+                                }
 
-                                    if let Some(rank) = &self.rank {
-                                        let (lol_rank, lp, ranking) = if rank.tier.is_empty() {
-                                            (
-                                                Label::new("Unranked"),
-                                                Label::new("LP: None"),
-                                                Label::new("Ranking: None"),
-                                            )
-                                        } else {
-                                            (
-                                                Label::new(format!("Wins: {}", rank.wins)),
-                                                Label::new(format!("Losses: {}", rank.losses)),
+                                if let Some(scores) = &self.rank {
+                                    if scores.is_empty() {
+                                        ui.vertical(|ui| {
+                                            ui.label("Unranked");
+                                            ui.label("LP: None");
+                                            ui.label("Ranking: None");
+                                        });
+                                    } else {
+                                        for rank in scores {
+                                            ui.vertical(|ui| {
+                                                ui.label(format!("Wins: {}", rank.wins));
+                                                ui.label(format!("Losses: {}", rank.losses));
+                                                ui.label(format!("Queue: {}", rank.queue_type));
+                                            });
+
+                                            ui.separator();
+
+                                            ui.vertical(|ui| {
+                                                ui.label(format!("Wins: {}", rank.wins));
+                                                ui.label(format!("Losses: {}", rank.losses));
                                                 if let Some(ranking) = &self.ranking {
-                                                    Label::new(format!(
+                                                    ui.label(format!(
                                                         "Ranking: {} / {}",
                                                         ranking.overall_ranking,
                                                         ranking.total_player_count
-                                                    ))
+                                                    ));
                                                 } else {
-                                                    Label::new("Ranking: None")
-                                                },
-                                            )
-                                        };
+                                                    ui.label("Ranking: None");
+                                                }
+                                            });
 
-                                        ui.vertical(|ui| {
-                                            ui.add(lol_rank);
-                                            ui.add(lp);
-                                            ui.label(format!("Queue: {}", rank.queue_type));
-                                        });
-
-                                        ui.separator();
-
-                                        ui.vertical(|ui| {
-                                            ui.label(format!("Wins: {}", rank.wins));
-                                            ui.label(format!("Losses: {}", rank.losses));
-                                            ui.add(ranking)
-                                        });
-                                    };
-                                }
+                                            ui.separator();
+                                        }
+                                    }
+                                };
                             });
 
                             ui.add_space(5.0);
@@ -538,7 +549,7 @@ impl eframe::App for MyEguiApp {
                                             }
                                         }
 
-                                        self.summeries = Some(sums)
+                                        self.summeries = Some(sums);
                                     }
                                 });
                         });

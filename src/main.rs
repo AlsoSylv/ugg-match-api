@@ -3,7 +3,6 @@ use std::sync::{mpsc::Sender, Arc};
 
 use bytes::Bytes;
 use eframe::egui;
-use serde_json::json;
 use tokio::runtime::Handle;
 use ui::Results;
 
@@ -14,8 +13,6 @@ mod structs;
 mod ui;
 
 fn main() {
-    println!("{}", std::mem::size_of::<ui::MyEguiApp>());
-
     let native_options = eframe::NativeOptions::default();
     let _ = eframe::run_native(
         "UGG API TEST",
@@ -37,42 +34,35 @@ fn match_summaries(
             Some(role) => vec![role],
             None => Vec::new(),
         };
-        let request = networking::fetch_match_summaries(name, "na1", roles, 1, &client).await;
-        match request {
-            Ok(response) => {
-                let _ = tx.send(Results::MatchSum(Ok(response)));
-                ctx.request_repaint();
-            }
-            Err(error) => {
-                let _ = tx.send(Results::MatchSum(Err(Errors::Request(error))));
-                ctx.request_repaint();
-            }
-        }
+        let request = networking::fetch_match_summaries(name, "na1", roles, 1, &client)
+            .await
+            .map_err(Errors::Request);
+        let _ = tx.send(Results::MatchSum(request));
+        ctx.request_repaint();
     });
 }
 
-/// Note: This is unsused because the searchbar is broken, but I'm hoping it gets fixed one day
-#[allow(unused)]
-fn player_suggestions(
-    name: Arc<String>,
-    tx: Sender<Results>,
-    ctx: egui::Context,
-    client: reqwest::Client,
-) {
-    tokio::spawn(async move {
-        let request = networking::player_suggestiosn(name, &client).await;
-        match request {
-            Ok(response) => {
-                // let _ = tx.send(Results::PlayerSuggestions(Ok(response)));
-                ctx.request_repaint();
-            }
-            Err(error) => {
-                // let _ = tx.send(Results::PlayerSuggestions(Err(Errors::Request(error))));
-                ctx.request_repaint();
-            }
-        }
-    });
-}
+// Note: This is unsused because the searchbar is broken, but I'm hoping it gets fixed one day
+// fn player_suggestions(
+//     name: Arc<String>,
+//     tx: Sender<Results>,
+//     ctx: egui::Context,
+//     client: reqwest::Client,
+// ) {
+//     tokio::spawn(async move {
+//         let request = networking::player_suggestiosn(name, &client).await;
+//         match request {
+//             Ok(response) => {
+//                 // let _ = tx.send(Results::PlayerSuggestions(Ok(response)));
+//                 ctx.request_repaint();
+//             }
+//             Err(error) => {
+//                 // let _ = tx.send(Results::PlayerSuggestions(Err(Errors::Request(error))));
+//                 ctx.request_repaint();
+//             }
+//         }
+//     });
+// }
 
 fn update_player(
     name: Arc<String>,
@@ -82,18 +72,11 @@ fn update_player(
     handle: &Handle,
 ) {
     handle.spawn(async move {
-        let request = networking::update_player(name, &client).await;
-        match request {
-            Ok(response) => {
-                println!("{}", json!(response));
-                let _ = tx.send(Results::PlayerUpdate(Ok(response)));
-                ctx.request_repaint();
-            }
-            Err(error) => {
-                let _ = tx.send(Results::PlayerUpdate(Err(Errors::Request(error))));
-                ctx.request_repaint();
-            }
-        }
+        let request = networking::update_player(name, &client)
+            .await
+            .map_err(Errors::Request);
+        let _ = tx.send(Results::PlayerUpdate(request));
+        ctx.request_repaint();
     });
 }
 
@@ -105,17 +88,11 @@ fn player_ranking(
     handle: &Handle,
 ) {
     handle.spawn(async move {
-        let request = networking::player_ranking(name, &client).await;
-        match request {
-            Ok(response) => {
-                let _ = tx.send(Results::Ranking(Ok(response)));
-                ctx.request_repaint();
-            }
-            Err(error) => {
-                let _ = tx.send(Results::Ranking(Err(Errors::Request(error))));
-                ctx.request_repaint();
-            }
-        }
+        let request = networking::player_ranking(name, &client)
+            .await
+            .map_err(Errors::Request);
+        let _ = tx.send(Results::Ranking(request));
+        ctx.request_repaint();
     });
 }
 
@@ -127,17 +104,11 @@ fn player_ranks(
     handle: &Handle,
 ) {
     handle.spawn(async move {
-        let request = networking::profile_ranks(name, &client).await;
-        match request {
-            Ok(response) => {
-                let _ = tx.send(Results::ProfileRanks(Ok(response)));
-                ctx.request_repaint();
-            }
-            Err(error) => {
-                let _ = tx.send(Results::ProfileRanks(Err(Errors::Request(error))));
-                ctx.request_repaint();
-            }
-        }
+        let request = networking::profile_ranks(name, &client)
+            .await
+            .map_err(Errors::Request);
+        let _ = tx.send(Results::ProfileRanks(request));
+        ctx.request_repaint();
     });
 }
 
