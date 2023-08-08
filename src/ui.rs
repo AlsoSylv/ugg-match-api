@@ -309,7 +309,7 @@ impl MyEguiApp {
                         let new_data: Vec<RankScore> = data
                             .drain(..)
                             .filter_map(|rank| {
-                                if rank.queue_type.as_str() == "" {
+                                if rank.queue_type.is_empty() {
                                     None
                                 } else {
                                     Some(rank)
@@ -406,7 +406,6 @@ impl MyEguiApp {
                         let y = headers.width as usize;
 
                         let mut reader = decoder.read_info().unwrap();
-
                         let mut buf = vec![0; reader.output_buffer_size()];
 
                         reader.next_frame(&mut buf).unwrap();
@@ -523,12 +522,11 @@ impl eframe::App for MyEguiApp {
                     egui::CentralPanel::default().show(ctx, |ui| {
                         ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
                             ui.horizontal(|ui| {
-                                if self.summeries.is_some() {
-                                    if let Some(texture) = &self.player_icon {
-                                        ui.image(texture, Vec2::splat(50.0));
-                                    } else if !self.active_player.is_empty() {
-                                        ui.spinner();
-                                    }
+                                if let Some(texture) = &self.player_icon {
+                                    ui.image(texture, Vec2::splat(50.0));
+                                } else if !self.active_player.is_empty() && self.summeries.is_some()
+                                {
+                                    ui.spinner();
                                 }
 
                                 if let Some(scores) = &self.rank {
@@ -570,29 +568,28 @@ impl eframe::App for MyEguiApp {
 
                             ui.add_space(5.0);
 
-                            if self.summeries.is_some() {
+                            let summeries = self.summeries.take();
+
+                            if let Some(sums) = &summeries {
                                 ui.separator();
-                            }
 
-                            ui.add_space(5.0);
+                                ui.add_space(5.0);
 
-                            egui::ScrollArea::vertical()
-                                .max_height(ui.available_height())
-                                .show(ui, |ui| {
-                                    let summeries = self.summeries.take();
-                                    if let Some(sums) = summeries {
+                                egui::ScrollArea::vertical()
+                                    .max_height(ui.available_height())
+                                    .show(ui, |ui| {
                                         if sums.is_empty() {
                                             ui.label("No Data");
                                         } else {
-                                            for summary in &sums {
+                                            for summary in sums {
                                                 self.match_page(summary, ui, ctx);
                                                 ui.separator();
                                             }
                                         }
+                                    });
+                            }
 
-                                        self.summeries = Some(sums);
-                                    }
-                                });
+                            self.summeries = summeries;
                         });
                     });
                 }

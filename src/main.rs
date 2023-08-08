@@ -130,7 +130,7 @@ fn player_info(
                 let _ = tx.send(wrapped);
             }
         }
-        
+
         let _ = tx.send(Results::PlayerInfo(val.map_err(Errors::Request)));
         ctx.request_repaint();
     });
