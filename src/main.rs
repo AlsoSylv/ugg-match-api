@@ -25,16 +25,17 @@ fn match_summaries(
     name: Arc<String>,
     tx: Sender<Results>,
     ctx: egui::Context,
-    role: Option<i8>,
+    role: Option<&i8>,
     client: reqwest::Client,
     handle: &Handle,
 ) {
+    let roles = match role {
+        Some(role) => vec![*role],
+        None => Vec::new(),
+    };
+
     handle.spawn(async move {
-        let roles = match role {
-            Some(role) => vec![role],
-            None => Vec::new(),
-        };
-        let request = networking::fetch_match_summaries(name, "na1", roles, 1, &client)
+        let request = networking::fetch_match_summaries(name, "na1", roles, 1, client)
             .await
             .map_err(Errors::Request);
         let _ = tx.send(Results::MatchSum(request));
@@ -72,7 +73,7 @@ fn update_player(
     handle: &Handle,
 ) {
     handle.spawn(async move {
-        let request = networking::update_player(name, &client)
+        let request = networking::update_player(name, client)
             .await
             .map_err(Errors::Request);
         let _ = tx.send(Results::PlayerUpdate(request));
@@ -88,7 +89,7 @@ fn player_ranking(
     handle: &Handle,
 ) {
     handle.spawn(async move {
-        let request = networking::player_ranking(name, &client)
+        let request = networking::player_ranking(name, client)
             .await
             .map_err(Errors::Request);
         let _ = tx.send(Results::Ranking(request));
@@ -104,7 +105,7 @@ fn player_ranks(
     handle: &Handle,
 ) {
     handle.spawn(async move {
-        let request = networking::profile_ranks(name, &client)
+        let request = networking::profile_ranks(name, client)
             .await
             .map_err(Errors::Request);
         let _ = tx.send(Results::ProfileRanks(request));
@@ -120,19 +121,17 @@ fn player_info(
     handle: &Handle,
 ) {
     handle.spawn(async move {
-        let val = networking::player_info(name, "na1", &client)
-            .await
-            .map_err(Errors::Request);
-        if let Ok(info) = val {
+        let val = networking::player_info(name, "na1", client.clone()).await;
+
+        if let Ok(info) = &val {
             if let Some(info) = &info.data.profile_player_info {
                 let res = get_icon(info.icon_id, client).await;
                 let wrapped = Results::PlayerIcon(res.map_err(Errors::Request));
                 let _ = tx.send(wrapped);
             }
-            let _ = tx.send(Results::PlayerInfo(Ok(info)));
-        } else {
-            let _ = tx.send(Results::PlayerInfo(val));
         }
+        
+        let _ = tx.send(Results::PlayerInfo(val.map_err(Errors::Request)));
         ctx.request_repaint();
     });
 }
@@ -143,15 +142,12 @@ fn get_versions(tx: Sender<Results>, ctx: egui::Context, client: reqwest::Client
             .get("https://ddragon.leagueoflegends.com/api/versions.json")
             .send()
             .await;
-        match res {
-            Ok(val) => {
-                let vers = val.json().await;
-                let _ = tx.send(Results::Versions(vers.map_err(Errors::Request)));
-            }
-            Err(err) => {
-                let _ = tx.send(Results::Versions(Err(Errors::Request(err))));
-            }
-        }
+        let res = match res {
+            Ok(val) => val.json().await,
+            Err(err) => Err(err),
+        };
+
+        let _ = tx.send(Results::Versions(res.map_err(Errors::Request)));
         ctx.request_repaint();
     });
 }
@@ -166,15 +162,13 @@ fn get_champ_info(
     let url = format!("http://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json");
     handle.spawn(async move {
         let res = client.get(url).send().await;
-        match res {
-            Ok(val) => {
-                let json = val.json().await.map_err(Errors::Request);
-                let _ = tx.send(Results::ChampJson(json));
-            }
-            Err(err) => {
-                let _ = tx.send(Results::ChampJson(Err(Errors::Request(err))));
-            }
-        }
+
+        let res = match res {
+            Ok(val) => val.json().await,
+            Err(err) => Err(err),
+        };
+
+        let _ = tx.send(Results::ChampJson(res.map_err(Errors::Request)));
         ctx.request_repaint();
     });
 }
@@ -190,21 +184,14 @@ fn get_champ_image(
 ) {
     let url = format!("http://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{key}.png");
     handle.spawn(async move {
-        let res = client.get(url.clone()).send().await;
-        match res {
-            Ok(val) => {
-                let json = val
-                    .bytes()
-                    .await
-                    .map_err(Errors::Request)
-                    .map(|bytes| (bytes, id));
+        let res = client.get(url).send().await;
 
-                let _ = tx.send(Results::ChampImage(json));
-            }
-            Err(err) => {
-                let _ = tx.send(Results::ChampJson(Err(Errors::Request(err))));
-            }
-        }
+        let res = match res {
+            Ok(val) => val.bytes().await.map(|bytes| (bytes, id)),
+            Err(err) => Err(err),
+        };
+
+        let _ = tx.send(Results::ChampImage(res.map_err(Errors::Request)));
         ctx.request_repaint();
     });
 }

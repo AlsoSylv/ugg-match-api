@@ -54,6 +54,10 @@ struct DataDragon {
 mod champ {
     use eframe::egui;
 
+    /// # Safety:
+    /// Because ths name and key strings are loaded once, and cannot be unloaded,
+    /// we create this struct after loading, with a ptr and len for every champ in
+    /// the json, meaning this ptrs cannot be null
     pub struct Champion {
         name_ptr: *const u8,
         name_len: u8,
@@ -76,6 +80,7 @@ mod champ {
         }
 
         pub fn name(&self) -> &str {
+            // SAFETY: A string ptr will not move even if the string is moved, and the length will never be modified in this code
             unsafe {
                 std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                     self.name_ptr,
@@ -85,6 +90,7 @@ mod champ {
         }
 
         pub fn key(&self) -> &str {
+            // SAFETY: A string ptr will not move even if the string is moved, and the length will never be modified in this code
             unsafe {
                 std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                     self.key_ptr,
@@ -166,7 +172,7 @@ impl MyEguiApp {
             name.clone(),
             self.tx.clone(),
             ctx.clone(),
-            self.roles_map.get(ROLES[self.role as usize]).copied(),
+            self.roles_map.get(ROLES[self.role as usize]),
             self.client.clone(),
             self.runtime.handle(),
         );
