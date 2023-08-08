@@ -1,15 +1,10 @@
 use crate::structs::{self, ChampionJson, MatchSummary, OverallRanking, RankScore};
-use crate::{
-    get_champ_image, get_champ_info, get_versions, match_summaries, player_info, player_ranking,
-    player_ranks, update_player, Errors,
-};
+use crate::Errors;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use eframe::egui::{self, TextBuffer, TextureOptions, Vec2};
 use eframe::epaint::ColorImage;
 use std::collections::HashMap;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
-use tokio::runtime::{Builder, Runtime};
 
 pub enum Results {
     MatchSum(Result<structs::PlayerMatchSummeries, Errors>),
@@ -23,10 +18,46 @@ pub enum Results {
     ChampImage(Result<(bytes::Bytes, i64), Errors>),
 }
 
+pub enum Message {
+    MatchSummaries {
+        name: Arc<String>,
+        ctx: egui::Context,
+        roles: Vec<i8>,
+    },
+    PlayerRanks {
+        name: Arc<String>,
+        ctx: egui::Context,
+    },
+    UpdatePlayer {
+        name: Arc<String>,
+        ctx: egui::Context,
+    },
+    PlayerRanking {
+        name: Arc<String>,
+        ctx: egui::Context,
+    },
+    PlayerInfo {
+        name: Arc<String>,
+        ctx: egui::Context,
+    },
+    GetVersions {
+        ctx: egui::Context,
+    },
+    GetChampInfo {
+        url: String,
+        ctx: egui::Context,
+    },
+    GetChampImage {
+        url: String,
+        ctx: egui::Context,
+        id: i64,
+    },
+}
+
 /// TODO: Store player data in a sub struct
 pub struct MyEguiApp {
-    tx: Sender<Results>,
-    rx: Receiver<Results>,
+    messenger: crossbeam_channel::Sender<Message>,
+    receiver: crossbeam_channel::Receiver<Results>,
 
     active_player: String,
     role: u8,
@@ -40,8 +71,6 @@ pub struct MyEguiApp {
     refresh_enabled: bool,
     update_enabled: bool,
 
-    client: reqwest::Client,
-    runtime: Runtime,
     id_name_champ_map: HashMap<i64, Champion>,
 }
 
@@ -125,15 +154,11 @@ const UGG_ROLES_REVERSED: [&str; 8] =
     ["", "Jungle", "Support", "ADC", "Top", "Mid", "Aram", "None"];
 
 impl MyEguiApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let runtime = Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_io()
-            .enable_time()
-            .build()
-            .unwrap();
-
-        let (tx, rx) = std::sync::mpsc::channel();
+    pub fn new(
+        _cc: &eframe::CreationContext<'_>,
+        sender: crossbeam_channel::Sender<Message>,
+        receiver: crossbeam_channel::Receiver<Results>,
+    ) -> Self {
         let roles_map = HashMap::from([
             ("Top".to_owned(), 4),
             ("Jungle".to_owned(), 1),
@@ -143,8 +168,6 @@ impl MyEguiApp {
         ]);
 
         Self {
-            tx,
-            rx,
             active_player: Default::default(),
             role: 5,
             roles_map,
@@ -153,58 +176,54 @@ impl MyEguiApp {
             ranking: None,
             refresh_enabled: false,
             update_enabled: false,
-            client: reqwest::Client::new(),
             player_icon: None,
-            runtime,
             data_dragon: DataDragon {
                 versions: None,
                 ver_started: false,
                 champ_json: None,
             },
             id_name_champ_map: HashMap::with_capacity(200),
+            messenger: sender,
+            receiver,
         }
+    }
+
+    fn send_message(&self, message: Message) {
+        let _ = self.messenger.send(message);
     }
 
     /// This long line of function calls, well looking like bullshit
     /// actually drives the entire state of the GUI to change!
     fn update_matches(&self, ctx: &egui::Context, name: Arc<String>) {
-        match_summaries(
-            name.clone(),
-            self.tx.clone(),
-            ctx.clone(),
-            self.roles_map.get(ROLES[self.role as usize]),
-            self.client.clone(),
-            self.runtime.handle(),
-        );
-        player_ranks(
-            name.clone(),
-            self.tx.clone(),
-            ctx.clone(),
-            self.client.clone(),
-            self.runtime.handle(),
-        );
-        player_ranking(
-            name.clone(),
-            self.tx.clone(),
-            ctx.clone(),
-            self.client.clone(),
-            self.runtime.handle(),
-        );
-        player_info(
-            name.clone(),
-            self.tx.clone(),
-            ctx.clone(),
-            self.client.clone(),
-            self.runtime.handle(),
-        );
+        self.send_message(Message::MatchSummaries {
+            name: name.clone(),
+            ctx: ctx.clone(),
+            roles: self
+                .roles_map
+                .get(ROLES[self.role as usize])
+                .map_or_else(Vec::new, |role| vec![*role]),
+        });
+        self.send_message(Message::PlayerRanks {
+            name: name.clone(),
+            ctx: ctx.clone(),
+        });
+        self.send_message(Message::PlayerRanking {
+            name: name.clone(),
+            ctx: ctx.clone(),
+        });
+        self.send_message(Message::PlayerInfo {
+            name: name.clone(),
+            ctx: ctx.clone(),
+        });
     }
 
     fn match_page(&mut self, summary: &MatchSummary, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let champ = self
-            .id_name_champ_map
-            .get_mut(&summary.champion_id)
-            .unwrap();
-
+        let champ = unsafe {
+            &mut *(self
+                .id_name_champ_map
+                .get_mut(&summary.champion_id)
+                .unwrap() as *mut Champion)
+        };
         let id = ui.make_persistent_id(summary.match_id);
 
         egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, false)
@@ -220,15 +239,15 @@ impl MyEguiApp {
                     ui.spinner();
 
                     if !champ.image_started() {
-                        get_champ_image(
-                            &self.data_dragon.versions.as_ref().unwrap()[0],
-                            champ.key(),
-                            summary.champion_id,
-                            self.tx.clone(),
-                            ctx.clone(),
-                            self.client.clone(),
-                            self.runtime.handle(),
-                        );
+                        self.send_message(Message::GetChampImage {
+                            url: format!(
+                                "http://ddragon.leagueoflegends.com/cdn/{}/img/champion/{}.png",
+                                self.data_dragon.versions.as_ref().unwrap()[0],
+                                champ.key()
+                            ),
+                            ctx: ctx.clone(),
+                            id: summary.champion_id,
+                        });
                         champ.set_image_started(true);
                     }
                 }
@@ -249,13 +268,10 @@ impl MyEguiApp {
     fn update_player(&self, ctx: &egui::Context) {
         let name = Arc::new(self.active_player.clone());
 
-        update_player(
-            name.clone(),
-            self.tx.clone(),
-            ctx.clone(),
-            self.client.clone(),
-            self.runtime.handle(),
-        );
+        self.send_message(Message::UpdatePlayer {
+            name: name.clone(),
+            ctx: ctx.clone(),
+        });
         self.update_matches(ctx, name.clone());
     }
 
@@ -269,17 +285,12 @@ impl MyEguiApp {
         };
 
         if !self.data_dragon.ver_started {
-            get_versions(
-                self.tx.clone(),
-                ctx.clone(),
-                self.client.clone(),
-                self.runtime.handle(),
-            );
+            self.send_message(Message::GetVersions { ctx: ctx.clone() });
 
             self.data_dragon.ver_started = true;
         }
 
-        if let Ok(receiver) = self.rx.try_recv() {
+        if let Ok(receiver) = self.receiver.try_recv() {
             match receiver {
                 Results::MatchSum(match_sums) => match match_sums {
                     Ok(matches) => {
@@ -368,13 +379,7 @@ impl MyEguiApp {
                 },
                 Results::Versions(vers) => match vers {
                     Ok(versions) => {
-                        get_champ_info(
-                            &versions[0],
-                            self.tx.clone(),
-                            ctx.clone(),
-                            self.client.clone(),
-                            self.runtime.handle(),
-                        );
+                        self.send_message(Message::GetChampInfo { url: format!("http://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json", versions[0]), ctx: ctx.clone() });
                         self.data_dragon.versions = Some(versions);
                     }
                     Err(err) => {
@@ -425,7 +430,7 @@ impl MyEguiApp {
                     }
                 },
             }
-        }
+        };
     }
 }
 
@@ -602,6 +607,7 @@ impl eframe::App for MyEguiApp {
             None => {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.spinner();
+                    println!("AAAAAAAAAA")
                 });
             }
         }

@@ -11,9 +11,10 @@ serde = { version = "1.0", features = ["derive"] }
 reqwest = { version = "0.11", features = ["json", "native-tls"], default-features = false }
 tokio = { version = "1", features = ["rt", "rt-multi-thread"], default-features = false }
 chrono = "0.4.23"
-eframe = "0.22.0"
+eframe = { version = "0.22.0", features = [] }
 bytes = "1.4.0"
 png = "0.17.9"
+crossbeam-channel = "0.5.8"
 
 [profile.release]
 lto = true

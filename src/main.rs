@@ -1,9 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use std::sync::{mpsc::Sender, Arc};
 
 use bytes::Bytes;
-use eframe::egui;
-use tokio::runtime::Handle;
 use ui::Results;
 
 mod graphql;
@@ -13,34 +10,132 @@ mod structs;
 mod ui;
 
 fn main() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_io()
+        .enable_time()
+        .build()
+        .unwrap();
+
+    let (gui_sender, thread_receiver) = crossbeam_channel::unbounded();
+    let (thread_sender, gui_receiver) = crossbeam_channel::unbounded();
+    let client = reqwest::Client::new();
+
+    let runtime_loop = || {
+        let thread_receiver = thread_receiver.clone();
+        let thread_sender = thread_sender.clone();
+        let client = client.clone();
+        async move {
+            loop {
+                match thread_receiver.try_recv() {
+                    Ok(message) => match message {
+                        ui::Message::MatchSummaries { name, ctx, roles } => {
+                            let request = networking::fetch_match_summaries(
+                                name,
+                                "na1",
+                                roles,
+                                1,
+                                client.clone(),
+                            )
+                            .await
+                            .map_err(Errors::Request);
+                            let _ = thread_sender.send(Results::MatchSum(request));
+                            ctx.request_repaint();
+                        }
+                        ui::Message::PlayerRanks { name, ctx } => {
+                            let request = networking::profile_ranks(name, client.clone())
+                                .await
+                                .map_err(Errors::Request);
+                            let _ = thread_sender.send(Results::ProfileRanks(request));
+                            ctx.request_repaint();
+                        }
+                        ui::Message::UpdatePlayer { name, ctx } => {
+                            let request = networking::update_player(name, client.clone())
+                                .await
+                                .map_err(Errors::Request);
+                            let _ = thread_sender.send(Results::PlayerUpdate(request));
+                            ctx.request_repaint();
+                        }
+                        ui::Message::PlayerRanking { name, ctx } => {
+                            let request = networking::player_ranking(name, client.clone())
+                                .await
+                                .map_err(Errors::Request);
+                            let _ = thread_sender.send(Results::Ranking(request));
+                            ctx.request_repaint();
+                        }
+                        ui::Message::PlayerInfo { name, ctx } => {
+                            let val = networking::player_info(name, "na1", client.clone()).await;
+
+                            if let Ok(info) = &val {
+                                if let Some(info) = &info.data.profile_player_info {
+                                    let res = get_icon(info.icon_id, client.clone()).await;
+                                    let wrapped = Results::PlayerIcon(res.map_err(Errors::Request));
+                                    let _ = thread_sender.send(wrapped);
+                                }
+                            }
+
+                            let _ = thread_sender
+                                .send(Results::PlayerInfo(val.map_err(Errors::Request)));
+                            ctx.request_repaint();
+                        }
+                        ui::Message::GetVersions { ctx } => {
+                            let res = client
+                                .get("https://ddragon.leagueoflegends.com/api/versions.json")
+                                .send()
+                                .await;
+                            let res = match res {
+                                Ok(val) => val.json().await,
+                                Err(err) => Err(err),
+                            };
+
+                            let _ =
+                                thread_sender.send(Results::Versions(res.map_err(Errors::Request)));
+                            ctx.request_repaint();
+                        }
+                        ui::Message::GetChampInfo { url, ctx } => {
+                            let res = client.get(url).send().await;
+
+                            let res = match res {
+                                Ok(val) => val.json().await,
+                                Err(err) => Err(err),
+                            };
+
+                            let _ = thread_sender
+                                .send(Results::ChampJson(res.map_err(Errors::Request)));
+                            ctx.request_repaint();
+                        }
+                        ui::Message::GetChampImage { url, ctx, id } => {
+                            let res = client.get(url).send().await;
+
+                            let res = match res {
+                                Ok(val) => val.bytes().await.map(|bytes| (bytes, id)),
+                                Err(err) => Err(err),
+                            };
+
+                            let _ = thread_sender
+                                .send(Results::ChampImage(res.map_err(Errors::Request)));
+                            ctx.request_repaint();
+                        }
+                    },
+                    Err(err) => match err {
+                        crossbeam_channel::TryRecvError::Empty => (),
+                        crossbeam_channel::TryRecvError::Disconnected => break,
+                    },
+                }
+            }
+        }
+    };
+
+    runtime.spawn(runtime_loop());
+
+    runtime.spawn(runtime_loop());
+
     let native_options = eframe::NativeOptions::default();
     let _ = eframe::run_native(
         "UGG API TEST",
         native_options,
-        Box::new(|cc| Box::new(ui::MyEguiApp::new(cc))),
+        Box::new(|cc| Box::new(ui::MyEguiApp::new(cc, gui_sender, gui_receiver))),
     );
-}
-
-fn match_summaries(
-    name: Arc<String>,
-    tx: Sender<Results>,
-    ctx: egui::Context,
-    role: Option<&i8>,
-    client: reqwest::Client,
-    handle: &Handle,
-) {
-    let roles = match role {
-        Some(role) => vec![*role],
-        None => Vec::new(),
-    };
-
-    handle.spawn(async move {
-        let request = networking::fetch_match_summaries(name, "na1", roles, 1, client)
-            .await
-            .map_err(Errors::Request);
-        let _ = tx.send(Results::MatchSum(request));
-        ctx.request_repaint();
-    });
 }
 
 // Note: This is unsused because the searchbar is broken, but I'm hoping it gets fixed one day
@@ -64,137 +159,6 @@ fn match_summaries(
 //         }
 //     });
 // }
-
-fn update_player(
-    name: Arc<String>,
-    tx: Sender<Results>,
-    ctx: egui::Context,
-    client: reqwest::Client,
-    handle: &Handle,
-) {
-    handle.spawn(async move {
-        let request = networking::update_player(name, client)
-            .await
-            .map_err(Errors::Request);
-        let _ = tx.send(Results::PlayerUpdate(request));
-        ctx.request_repaint();
-    });
-}
-
-fn player_ranking(
-    name: Arc<String>,
-    tx: Sender<Results>,
-    ctx: egui::Context,
-    client: reqwest::Client,
-    handle: &Handle,
-) {
-    handle.spawn(async move {
-        let request = networking::player_ranking(name, client)
-            .await
-            .map_err(Errors::Request);
-        let _ = tx.send(Results::Ranking(request));
-        ctx.request_repaint();
-    });
-}
-
-fn player_ranks(
-    name: Arc<String>,
-    tx: Sender<Results>,
-    ctx: egui::Context,
-    client: reqwest::Client,
-    handle: &Handle,
-) {
-    handle.spawn(async move {
-        let request = networking::profile_ranks(name, client)
-            .await
-            .map_err(Errors::Request);
-        let _ = tx.send(Results::ProfileRanks(request));
-        ctx.request_repaint();
-    });
-}
-
-fn player_info(
-    name: Arc<String>,
-    tx: Sender<Results>,
-    ctx: egui::Context,
-    client: reqwest::Client,
-    handle: &Handle,
-) {
-    handle.spawn(async move {
-        let val = networking::player_info(name, "na1", client.clone()).await;
-
-        if let Ok(info) = &val {
-            if let Some(info) = &info.data.profile_player_info {
-                let res = get_icon(info.icon_id, client).await;
-                let wrapped = Results::PlayerIcon(res.map_err(Errors::Request));
-                let _ = tx.send(wrapped);
-            }
-        }
-
-        let _ = tx.send(Results::PlayerInfo(val.map_err(Errors::Request)));
-        ctx.request_repaint();
-    });
-}
-
-fn get_versions(tx: Sender<Results>, ctx: egui::Context, client: reqwest::Client, handle: &Handle) {
-    handle.spawn(async move {
-        let res = client
-            .get("https://ddragon.leagueoflegends.com/api/versions.json")
-            .send()
-            .await;
-        let res = match res {
-            Ok(val) => val.json().await,
-            Err(err) => Err(err),
-        };
-
-        let _ = tx.send(Results::Versions(res.map_err(Errors::Request)));
-        ctx.request_repaint();
-    });
-}
-
-fn get_champ_info(
-    version: &str,
-    tx: Sender<Results>,
-    ctx: egui::Context,
-    client: reqwest::Client,
-    handle: &Handle,
-) {
-    let url = format!("http://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json");
-    handle.spawn(async move {
-        let res = client.get(url).send().await;
-
-        let res = match res {
-            Ok(val) => val.json().await,
-            Err(err) => Err(err),
-        };
-
-        let _ = tx.send(Results::ChampJson(res.map_err(Errors::Request)));
-        ctx.request_repaint();
-    });
-}
-
-fn get_champ_image(
-    version: &str,
-    key: &str,
-    id: i64,
-    tx: Sender<Results>,
-    ctx: egui::Context,
-    client: reqwest::Client,
-    handle: &Handle,
-) {
-    let url = format!("http://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{key}.png");
-    handle.spawn(async move {
-        let res = client.get(url).send().await;
-
-        let res = match res {
-            Ok(val) => val.bytes().await.map(|bytes| (bytes, id)),
-            Err(err) => Err(err),
-        };
-
-        let _ = tx.send(Results::ChampImage(res.map_err(Errors::Request)));
-        ctx.request_repaint();
-    });
-}
 
 async fn get_icon(id: i64, client: reqwest::Client) -> Result<Bytes, reqwest::Error> {
     let res = client
