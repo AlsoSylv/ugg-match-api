@@ -607,7 +607,6 @@ impl eframe::App for MyEguiApp {
             None => {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.spinner();
-                    println!("AAAAAAAAAA")
                 });
             }
         }

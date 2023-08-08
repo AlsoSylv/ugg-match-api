@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::{thread, time::Duration};
+
 use bytes::Bytes;
 use ui::Results;
 
@@ -118,7 +120,9 @@ fn main() {
                         }
                     },
                     Err(err) => match err {
-                        crossbeam_channel::TryRecvError::Empty => (),
+                        crossbeam_channel::TryRecvError::Empty => {
+                            thread::sleep(Duration::from_millis(100))
+                        }
                         crossbeam_channel::TryRecvError::Disconnected => break,
                     },
                 }
