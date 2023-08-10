@@ -3,19 +3,19 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// Deserialize Player Matches
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerMatchSummeries {
     pub data: Data,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Data {
     pub fetch_player_match_summaries: FetchPlayerMatchSummaries,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchPlayerMatchSummaries {
     pub finished_match_summaries: bool,
@@ -23,7 +23,7 @@ pub struct FetchPlayerMatchSummaries {
     pub total_num_matches: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MatchSummary {
     pub assists: i64,
@@ -58,7 +58,7 @@ pub struct MatchSummary {
     pub win: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Team {
     pub champion_id: i64,
@@ -69,19 +69,19 @@ pub struct Team {
 }
 
 /// Deserialize Player Suggestions
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerSuggestions {
     pub data: PlayerData,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerData {
     pub player_info_suggestions: Vec<PlayerInfoSuggestion>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerInfoSuggestion {
     // #[serde(rename = "__typename")]
@@ -93,19 +93,19 @@ pub struct PlayerInfoSuggestion {
 }
 
 /// Deserialize Player Updates
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdatePlayer {
     pub data: UpdateData,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateData {
     pub update_player_profile: UpdatePlayerProfile,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdatePlayerProfile {
     pub error_reason: String,
@@ -113,25 +113,25 @@ pub struct UpdatePlayerProfile {
 }
 
 /// Deserealize PlayerRanks
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerRank {
     pub data: RankData,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RankData {
     pub fetch_profile_ranks: FetchProfileRanks,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchProfileRanks {
     pub rank_scores: Vec<RankScore>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RankScore {
     pub last_updated_at: Option<i64>,
@@ -147,38 +147,38 @@ pub struct RankScore {
 }
 
 /// Deserialize Player Overview
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerRanking {
     pub data: RankingData,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RankingData {
     pub overall_ranking: Option<OverallRanking>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OverallRanking {
     pub overall_ranking: i64,
     pub total_player_count: i64,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerInfo {
     pub data: ProfilePlayerInfo,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfilePlayerInfo {
     pub profile_player_info: Option<ProfileInfo>,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileInfo {
     pub icon_id: i64,
@@ -186,7 +186,7 @@ pub struct ProfileInfo {
     pub summoner_name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ChampionJson {
     #[serde(rename = "type")]
     pub _type: String,
@@ -195,7 +195,7 @@ pub struct ChampionJson {
     pub data: HashMap<String, Datum>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Datum {
     pub version: String,
     pub id: String,
@@ -210,7 +210,7 @@ pub struct Datum {
     pub stats: HashMap<String, f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Image {
     pub full: String,
     pub sprite: String,
@@ -221,7 +221,7 @@ pub struct Image {
     pub h: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Info {
     pub attack: i64,
     pub defense: i64,
@@ -229,7 +229,7 @@ pub struct Info {
     pub difficulty: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Tag {
     Assassin,
     Fighter,

@@ -3,7 +3,7 @@
 use std::{thread, time::Duration};
 
 use bytes::Bytes;
-use ui::Results;
+use ui::{Message, Results};
 
 mod graphql;
 #[path = "networking/networking.rs"]
@@ -13,13 +13,13 @@ mod ui;
 
 fn main() {
     let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
+        .worker_threads(3)
         .enable_io()
         .enable_time()
         .build()
         .unwrap();
 
-    let (gui_sender, thread_receiver) = crossbeam_channel::unbounded();
+    let (gui_sender, thread_receiver) = crossbeam_channel::unbounded::<Message>();
     let (thread_sender, gui_receiver) = crossbeam_channel::unbounded();
     let client = reqwest::Client::new();
 
@@ -30,95 +30,95 @@ fn main() {
         async move {
             loop {
                 match thread_receiver.try_recv() {
-                    Ok(message) => match message {
-                        ui::Message::MatchSummaries { name, ctx, roles } => {
-                            let request = networking::fetch_match_summaries(
-                                name,
-                                "na1",
-                                roles,
-                                1,
-                                client.clone(),
-                            )
-                            .await
-                            .map_err(Errors::Request);
-                            let _ = thread_sender.send(Results::MatchSum(request));
-                            ctx.request_repaint();
-                        }
-                        ui::Message::PlayerRanks { name, ctx } => {
-                            let request = networking::profile_ranks(name, client.clone())
+                    Ok(message) => {
+                        let ctx = message.ctx;
+                        let message = match message.payload {
+                            ui::Payload::MatchSummaries { name, roles } => {
+                                let request = networking::fetch_match_summaries(
+                                    name,
+                                    "na1",
+                                    roles,
+                                    1,
+                                    client.clone(),
+                                )
                                 .await
                                 .map_err(Errors::Request);
-                            let _ = thread_sender.send(Results::ProfileRanks(request));
-                            ctx.request_repaint();
-                        }
-                        ui::Message::UpdatePlayer { name, ctx } => {
-                            let request = networking::update_player(name, client.clone())
-                                .await
-                                .map_err(Errors::Request);
-                            let _ = thread_sender.send(Results::PlayerUpdate(request));
-                            ctx.request_repaint();
-                        }
-                        ui::Message::PlayerRanking { name, ctx } => {
-                            let request = networking::player_ranking(name, client.clone())
-                                .await
-                                .map_err(Errors::Request);
-                            let _ = thread_sender.send(Results::Ranking(request));
-                            ctx.request_repaint();
-                        }
-                        ui::Message::PlayerInfo { name, ctx } => {
-                            let val = networking::player_info(name, "na1", client.clone()).await;
 
-                            if let Ok(info) = &val {
-                                if let Some(info) = &info.data.profile_player_info {
-                                    let res = get_icon(info.icon_id, client.clone()).await;
-                                    let wrapped = Results::PlayerIcon(res.map_err(Errors::Request));
-                                    let _ = thread_sender.send(wrapped);
-                                }
+                                Results::MatchSum(request)
                             }
+                            ui::Payload::PlayerRanks { name } => {
+                                let request = networking::profile_ranks(name, client.clone())
+                                    .await
+                                    .map_err(Errors::Request);
 
-                            let _ = thread_sender
-                                .send(Results::PlayerInfo(val.map_err(Errors::Request)));
-                            ctx.request_repaint();
-                        }
-                        ui::Message::GetVersions { ctx } => {
-                            let res = client
-                                .get("https://ddragon.leagueoflegends.com/api/versions.json")
-                                .send()
-                                .await;
-                            let res = match res {
-                                Ok(val) => val.json().await,
-                                Err(err) => Err(err),
-                            };
+                                Results::ProfileRanks(request)
+                            }
+                            ui::Payload::UpdatePlayer { name } => {
+                                let request = networking::update_player(name, client.clone())
+                                    .await
+                                    .map_err(Errors::Request);
 
-                            let _ =
-                                thread_sender.send(Results::Versions(res.map_err(Errors::Request)));
-                            ctx.request_repaint();
-                        }
-                        ui::Message::GetChampInfo { url, ctx } => {
-                            let res = client.get(url).send().await;
+                                Results::PlayerUpdate(request)
+                            }
+                            ui::Payload::PlayerRanking { name } => {
+                                let request = networking::player_ranking(name, client.clone())
+                                    .await
+                                    .map_err(Errors::Request);
 
-                            let res = match res {
-                                Ok(val) => val.json().await,
-                                Err(err) => Err(err),
-                            };
+                                Results::Ranking(request)
+                            }
+                            ui::Payload::PlayerInfo { name } => {
+                                let val =
+                                    networking::player_info(name, "na1", client.clone()).await;
 
-                            let _ = thread_sender
-                                .send(Results::ChampJson(res.map_err(Errors::Request)));
-                            ctx.request_repaint();
-                        }
-                        ui::Message::GetChampImage { url, ctx, id } => {
-                            let res = client.get(url).send().await;
+                                if let Ok(info) = &val {
+                                    if let Some(info) = &info.data.profile_player_info {
+                                        let res = get_icon(info.icon_id, client.clone()).await;
+                                        let wrapped =
+                                            Results::PlayerIcon(res.map_err(Errors::Request));
+                                        let _ = thread_sender.send(wrapped);
+                                    }
+                                }
 
-                            let res = match res {
-                                Ok(val) => val.bytes().await.map(|bytes| (bytes, id)),
-                                Err(err) => Err(err),
-                            };
+                                Results::PlayerInfo(val.map_err(Errors::Request))
+                            }
+                            ui::Payload::GetVersions => {
+                                let res = client
+                                    .get("https://ddragon.leagueoflegends.com/api/versions.json")
+                                    .send()
+                                    .await;
+                                let res = match res {
+                                    Ok(val) => val.json().await,
+                                    Err(err) => Err(err),
+                                };
 
-                            let _ = thread_sender
-                                .send(Results::ChampImage(res.map_err(Errors::Request)));
-                            ctx.request_repaint();
-                        }
-                    },
+                                Results::Versions(res.map_err(Errors::Request))
+                            }
+                            ui::Payload::GetChampInfo { url } => {
+                                let res = client.get(url).send().await;
+
+                                let res = match res {
+                                    Ok(val) => val.json().await,
+                                    Err(err) => Err(err),
+                                };
+
+                                Results::ChampJson(res.map_err(Errors::Request))
+                            }
+                            ui::Payload::GetChampImage { url, id } => {
+                                let res = client.get(url).send().await;
+
+                                let res = match res {
+                                    Ok(val) => val.bytes().await.map(|bytes| (bytes, id)),
+                                    Err(err) => Err(err),
+                                };
+
+                                Results::ChampImage(res.map_err(Errors::Request))
+                            }
+                        };
+
+                        let _ = thread_sender.send(message);
+                        ctx.request_repaint();
+                    }
                     Err(err) => match err {
                         crossbeam_channel::TryRecvError::Empty => {
                             thread::sleep(Duration::from_millis(100))
@@ -131,7 +131,7 @@ fn main() {
     };
 
     runtime.spawn(runtime_loop());
-
+    runtime.spawn(runtime_loop());
     runtime.spawn(runtime_loop());
 
     let native_options = eframe::NativeOptions::default();
