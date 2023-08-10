@@ -19,7 +19,7 @@ const MATCH_SUMMERIES: &str = include_str!("../graphql/match_query.graphql");
 pub async fn fetch_match_summaries(
     name: Arc<String>,
     region_id: &'static str,
-    role: Vec<i8>,
+    role: Vec<u8>,
     page: i64,
     client: reqwest::Client,
 ) -> Result<structs::PlayerMatchSummeries, reqwest::Error> {

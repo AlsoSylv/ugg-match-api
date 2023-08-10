@@ -13,7 +13,7 @@ pub struct FetchMatchSummaries {
     pub queue_type: Vec<i64>,
     pub duo_name: String,
     pub region_id: &'static str,
-    pub role: Vec<i8>,
+    pub role: Vec<u8>,
     pub season_ids: Vec<i32>,
     pub summoner_name: String,
 }

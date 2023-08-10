@@ -1,4 +1,4 @@
-use crate::structs::{self, ChampionJson, MatchSummary, OverallRanking, RankScore};
+use crate::structs::{self, ChampData, ChampionJson, MatchSummary, OverallRanking, RankScore};
 use crate::Errors;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use eframe::egui::{self, TextBuffer, TextureOptions, Vec2};
@@ -24,7 +24,7 @@ pub struct Message {
 }
 
 pub enum Payload {
-    MatchSummaries { name: Arc<String>, roles: Vec<i8> },
+    MatchSummaries { name: Arc<String>, roles: Vec<u8> },
     PlayerRanks { name: Arc<String> },
     UpdatePlayer { name: Arc<String> },
     PlayerRanking { name: Arc<String> },
@@ -41,7 +41,6 @@ pub struct MyEguiApp {
 
     active_player: String,
     role: u8,
-    roles_map: HashMap<String, i8>,
     summeries: Option<Vec<MatchSummary>>,
     rank: Option<Vec<RankScore>>,
     ranking: Option<OverallRanking>,
@@ -51,87 +50,63 @@ pub struct MyEguiApp {
     refresh_enabled: bool,
     update_enabled: bool,
 
-    id_name_champ_map: Option<HashMap<i64, Champion>>,
+    id_name_champ_map: Option<HashMap<i64, Champ>>,
 }
 
 struct DataDragon {
     versions: Option<Vec<String>>,
     ver_started: bool,
-    champ_json: Option<ChampionJson>,
+    // champ_json: Option<ChampionJson>,
 }
 
-mod champ {
-    use eframe::egui;
+pub struct Champ {
+    pub key: String,
+    // pub id: String,
+    pub name: String,
+    // pub title: String,
+    // pub blurb: String,
+    // pub tags: Vec<Tag>,
+    // pub partype: String,
+    // pub stats: HashMap<String, f64>,
+    image: Option<egui::TextureHandle>,
+    image_started: bool,
+}
 
-    /// # Safety:
-    /// Because ths name and key strings are loaded once, and cannot be unloaded,
-    /// we create this struct after loading, with a ptr and len for every champ in
-    /// the json, meaning this ptrs cannot be null
-    pub struct Champion {
-        name_ptr: *const u8,
-        name_len: u8,
-        key_ptr: *const u8,
-        key_len: u8,
-        image: Option<egui::TextureHandle>,
-        image_started: bool,
-    }
+// pub enum Tag {
+//     Assassin,
+//     Fighter,
+//     Mage,
+//     Marksman,
+//     Support,
+//     Tank,
+// }
 
-    impl Champion {
-        pub fn new(name: &str, key: &str) -> Champion {
-            Champion {
-                name_ptr: name.as_ptr(),
-                name_len: name.len() as u8,
-                key_ptr: key.as_ptr(),
-                key_len: key.len() as u8,
-                image: None,
-                image_started: false,
-            }
-        }
-
-        pub fn name(&self) -> &str {
-            // SAFETY: A string ptr will not move even if the string is moved, and the length will never be modified in this code
-            unsafe {
-                std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                    self.name_ptr,
-                    self.name_len as usize,
-                ))
-            }
-        }
-
-        pub fn key(&self) -> &str {
-            // SAFETY: A string ptr will not move even if the string is moved, and the length will never be modified in this code
-            unsafe {
-                std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                    self.key_ptr,
-                    self.key_len as usize,
-                ))
-            }
-        }
-
-        pub fn image(&self) -> Option<&egui::TextureHandle> {
-            self.image.as_ref()
-        }
-
-        pub fn set_image(&mut self, texture: Option<egui::TextureHandle>) {
-            self.image = texture;
-        }
-
-        pub fn image_started(&self) -> bool {
-            self.image_started
-        }
-
-        pub fn set_image_started(&mut self, started: bool) {
-            self.image_started = started;
+impl ChampData {
+    fn into(self) -> Champ {
+        Champ {
+            key: self.key,
+            name: self.name,
+            image: None,
+            image_started: false,
         }
     }
 }
-
-use champ::Champion;
 
 static ROLES: [&str; 6] = ["Top", "Jungle", "Mid", "ADC", "Support", "None"];
 
 const UGG_ROLES_REVERSED: [&str; 8] =
     ["", "Jungle", "Support", "ADC", "Top", "Mid", "Aram", "None"];
+
+fn get_role_index(role: u8) -> Option<u8> {
+    match role {
+        0 => Some(4), // Top
+        1 => Some(1), // Jungle
+        2 => Some(5), // Mid
+        3 => Some(3), // ADC
+        4 => Some(2), // Support
+        _ => None,    // No role, used to map to an empty vec
+    }
+}
 
 impl MyEguiApp {
     pub fn new(
@@ -139,18 +114,9 @@ impl MyEguiApp {
         sender: crossbeam_channel::Sender<Message>,
         receiver: crossbeam_channel::Receiver<Results>,
     ) -> Self {
-        let roles_map = HashMap::from([
-            ("Top".to_owned(), 4),
-            ("Jungle".to_owned(), 1),
-            ("Mid".to_owned(), 5),
-            ("ADC".to_owned(), 3),
-            ("Support".to_owned(), 2),
-        ]);
-
         Self {
             active_player: Default::default(),
             role: 5,
-            roles_map,
             summeries: None,
             rank: None,
             ranking: None,
@@ -160,7 +126,7 @@ impl MyEguiApp {
             data_dragon: DataDragon {
                 versions: None,
                 ver_started: false,
-                champ_json: None,
+                // champ_json: None,
             },
             id_name_champ_map: None,
             messenger: sender,
@@ -168,35 +134,26 @@ impl MyEguiApp {
         }
     }
 
-    fn send_message(&self, message: Message) {
-        let _ = self.messenger.send(message);
+    fn send_message(&self, ctx: &egui::Context, payload: Payload) {
+        let _ = self.messenger.send(Message {
+            ctx: ctx.clone(),
+            payload,
+        });
     }
 
     /// This long line of function calls, well looking like bullshit
     /// actually drives the entire state of the GUI to change!
     fn update_matches(&self, ctx: &egui::Context, name: Arc<String>) {
-        self.send_message(Message {
-            ctx: ctx.clone(),
-            payload: Payload::MatchSummaries {
+        self.send_message(
+            ctx,
+            Payload::MatchSummaries {
                 name: name.clone(),
-                roles: self
-                    .roles_map
-                    .get(ROLES[self.role as usize])
-                    .map_or_else(Vec::new, |role| vec![*role]),
+                roles: get_role_index(self.role).map_or_else(Vec::new, |role| vec![role]),
             },
-        });
-        self.send_message(Message {
-            ctx: ctx.clone(),
-            payload: Payload::PlayerRanks { name: name.clone() },
-        });
-        self.send_message(Message {
-            ctx: ctx.clone(),
-            payload: Payload::PlayerRanking { name: name.clone() },
-        });
-        self.send_message(Message {
-            ctx: ctx.clone(),
-            payload: Payload::PlayerInfo { name: name.clone() },
-        });
+        );
+        self.send_message(ctx, Payload::PlayerRanks { name: name.clone() });
+        self.send_message(ctx, Payload::PlayerRanking { name: name.clone() });
+        self.send_message(ctx, Payload::PlayerInfo { name: name.clone() });
     }
 
     fn match_page(
@@ -204,38 +161,36 @@ impl MyEguiApp {
         summary: &MatchSummary,
         ui: &mut egui::Ui,
         ctx: &egui::Context,
+        map: &mut HashMap<i64, Champ>,
         versions: &Vec<String>,
-        map: &mut HashMap<i64, Champion>,
     ) {
         let champ = map.get_mut(&summary.champion_id).unwrap();
         let id = ui.make_persistent_id(summary.match_id);
 
         egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, false)
             .show_header(ui, |ui| {
-                if let Some(image) = champ.image() {
+                if let Some(image) = &champ.image {
                     ui.image(image, Vec2::splat(40.0));
                     ui.label(format!(
                         "{} {}",
-                        champ.name(),
-                        UGG_ROLES_REVERSED[summary.role as usize]
+                        champ.name, UGG_ROLES_REVERSED[summary.role as usize]
                     ));
                 } else {
                     ui.spinner();
 
-                    if !champ.image_started() {
-                        self.send_message(Message {
-                            ctx: ctx.clone(),
-                            payload: Payload::GetChampImage {
+                    if !champ.image_started {
+                        self.send_message(
+                            ctx,
+                            Payload::GetChampImage {
                                 url: format!(
                                     "http://ddragon.leagueoflegends.com/cdn/{}/img/champion/{}.png",
-                                    versions[0],
-                                    champ.key()
+                                    versions[0], champ.key
                                 ),
                                 id: summary.champion_id,
                             },
-                        });
+                        );
 
-                        champ.set_image_started(true);
+                        champ.image_started = true;
                     }
                 }
             })
@@ -254,10 +209,7 @@ impl MyEguiApp {
 
     fn update_player(&self, ctx: &egui::Context) {
         let name = Arc::new(self.active_player.clone());
-        self.send_message(Message {
-            ctx: ctx.clone(),
-            payload: Payload::UpdatePlayer { name: name.clone() },
-        });
+        self.send_message(ctx, Payload::UpdatePlayer { name: name.clone() });
     }
 
     fn update_data(&mut self, ctx: &egui::Context) {
@@ -270,10 +222,7 @@ impl MyEguiApp {
         };
 
         if !self.data_dragon.ver_started {
-            self.send_message(Message {
-                ctx: ctx.clone(),
-                payload: Payload::GetVersions,
-            });
+            self.send_message(ctx, Payload::GetVersions);
 
             self.data_dragon.ver_started = true;
         }
@@ -369,7 +318,7 @@ impl MyEguiApp {
                 },
                 Results::Versions(vers) => match vers {
                     Ok(versions) => {
-                        self.send_message(Message { ctx: ctx.clone(), payload: Payload::GetChampInfo { url: format!("http://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json", versions[0]) } });
+                        self.send_message(ctx, Payload::GetChampInfo { url: format!("http://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json", versions[0]) } );
                         self.data_dragon.versions = Some(versions);
                     }
                     Err(err) => {
@@ -379,11 +328,10 @@ impl MyEguiApp {
                 Results::ChampJson(json) => match json {
                     Ok(json) => {
                         let mut id_name_champ_map = HashMap::with_capacity(json.data.len());
-                        for data in json.data.values() {
-                            let id: i64 = data.key.parse().unwrap();
-                            id_name_champ_map.insert(id, Champion::new(&data.name, &data.id));
+                        for (_, data) in json.data {
+                            let id: i64 = data.id.parse().unwrap();
+                            id_name_champ_map.insert(id, data.into());
                         }
-                        self.data_dragon.champ_json = Some(json);
                         self.id_name_champ_map = Some(id_name_champ_map);
                     }
                     Err(err) => {
@@ -421,7 +369,7 @@ impl MyEguiApp {
                             .get_mut(&id)
                             .unwrap();
 
-                        handle.set_image(Some(texture));
+                        handle.image = Some(texture);
                     }
                     Err(err) => {
                         dbg!("{:?}", err);
@@ -579,8 +527,8 @@ impl eframe::App for MyEguiApp {
                                                 summary,
                                                 ui,
                                                 ctx,
-                                                &versions,
                                                 &mut id_name_champ_map,
+                                                &versions,
                                             );
                                             ui.separator();
                                         }

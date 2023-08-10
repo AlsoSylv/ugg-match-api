@@ -192,14 +192,16 @@ pub struct ChampionJson {
     pub _type: String,
     pub format: String,
     pub version: String,
-    pub data: HashMap<String, Datum>,
+    pub data: HashMap<String, ChampData>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Datum {
+pub struct ChampData {
     pub version: String,
-    pub id: String,
+    #[serde(rename = "id")]
     pub key: String,
+    #[serde(rename = "key")]
+    pub id: String,
     pub name: String,
     pub title: String,
     pub blurb: String,
