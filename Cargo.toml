@@ -14,7 +14,7 @@ chrono = "0.4.23"
 eframe = { version = "0.22.0", features = [] }
 bytes = "1.4.0"
 png = "0.17.9"
-crossbeam-channel = "0.5.8"
+async-channel = "1.9.0"
 
 [profile.release]
 lto = true

@@ -36,8 +36,8 @@ pub enum Payload {
 
 /// TODO: Store player data in a sub struct
 pub struct MyEguiApp {
-    messenger: crossbeam_channel::Sender<Message>,
-    receiver: crossbeam_channel::Receiver<Results>,
+    messenger: async_channel::Sender<Message>,
+    receiver: async_channel::Receiver<Results>,
 
     active_player: String,
     role: u8,
@@ -111,8 +111,8 @@ fn get_role_index(role: u8) -> Option<u8> {
 impl MyEguiApp {
     pub fn new(
         _cc: &eframe::CreationContext<'_>,
-        sender: crossbeam_channel::Sender<Message>,
-        receiver: crossbeam_channel::Receiver<Results>,
+        sender: async_channel::Sender<Message>,
+        receiver: async_channel::Receiver<Results>,
     ) -> Self {
         Self {
             active_player: Default::default(),
@@ -135,10 +135,12 @@ impl MyEguiApp {
     }
 
     fn send_message(&self, ctx: &egui::Context, payload: Payload) {
-        let _ = self.messenger.send(Message {
-            ctx: ctx.clone(),
-            payload,
-        });
+        self.messenger
+            .try_send(Message {
+                ctx: ctx.clone(),
+                payload,
+            })
+            .unwrap();
     }
 
     /// This long line of function calls, well looking like bullshit
@@ -223,7 +225,6 @@ impl MyEguiApp {
 
         if !self.data_dragon.ver_started {
             self.send_message(ctx, Payload::GetVersions);
-
             self.data_dragon.ver_started = true;
         }
 
@@ -253,6 +254,7 @@ impl MyEguiApp {
                 },
                 Results::ProfileRanks(rank) => match rank {
                     Ok(rank) => {
+                        println!("A");
                         let data = rank
                             .data
                             .fetch_profile_ranks
@@ -274,6 +276,7 @@ impl MyEguiApp {
                 },
                 Results::Ranking(ranking) => match ranking {
                     Ok(ranking) => {
+                        println!("A");
                         self.ranking = ranking.data.overall_ranking;
                     }
                     Err(err) => {
@@ -283,6 +286,7 @@ impl MyEguiApp {
                 // Todo: Display this info
                 Results::PlayerInfo(info) => match info {
                     Ok(info) => {
+                        // println!("A");
                         println!("{:?}", info);
                     }
                     Err(err) => {
@@ -291,6 +295,7 @@ impl MyEguiApp {
                 },
                 Results::PlayerIcon(data) => match data {
                     Ok(icon) => {
+                        println!("A");
                         let mut decoder = png::Decoder::new(&*icon);
                         let headers = decoder
                             .read_header_info()
@@ -395,7 +400,7 @@ impl eframe::App for MyEguiApp {
 
                                 let search_bar = ui.text_edit_singleline(&mut self.active_player);
 
-                                if search_bar.clicked() {
+                                if search_bar.clicked() || search_bar.lost_focus() {
                                     if !self.active_player.is_empty() {
                                         self.update_matches(
                                             ctx,
@@ -404,12 +409,14 @@ impl eframe::App for MyEguiApp {
                                     } else {
                                         self.summeries = None;
                                         self.player_icon = None;
+                                        self.rank = None;
                                     }
                                 }
 
-                                if search_bar.changed() {
+                                if search_bar.changed() && self.active_player.is_empty() {
                                     self.summeries = None;
                                     self.player_icon = None;
+                                    self.rank = None;
                                 }
                             });
 
@@ -480,8 +487,8 @@ impl eframe::App for MyEguiApp {
                                 } else {
                                     for rank in scores {
                                         ui.vertical(|ui| {
-                                            ui.label(format!("Wins: {}", rank.wins));
-                                            ui.label(format!("Losses: {}", rank.losses));
+                                            ui.label(format!("Rank: {}", rank.rank));
+                                            ui.label(format!("LP: {}", rank.lp));
                                             ui.label(format!("Queue: {}", rank.queue_type));
                                         });
 
@@ -552,6 +559,7 @@ impl eframe::App for MyEguiApp {
                 ui.spinner();
             });
         }
+        ctx.request_repaint();
     }
 }
 
