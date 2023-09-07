@@ -108,7 +108,7 @@ pub struct UpdateData {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdatePlayerProfile {
-    pub error_reason: String,
+    pub error_reason: Option<String>,
     pub success: bool,
 }
 
@@ -239,4 +239,76 @@ pub enum Tag {
     Marksman,
     Support,
     Tank,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetMatch {
+    pub data: MatchData,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MatchData {
+    #[serde(rename = "match")]
+    pub data_match: Match,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Match {
+    pub match_summary: FullMatchSummary,
+    pub performance_score: Vec<PerformanceScore>,
+    pub winning_team: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FullMatchSummary {
+    pub assists: i64,
+    pub champion_id: i64,
+    pub cs: i64,
+    pub damage: i64,
+    pub deaths: i64,
+    pub gold: i64,
+    pub items: Vec<i64>,
+    pub jungle_cs: i64,
+    pub kill_participation: i64,
+    pub kills: i64,
+    pub level: i64,
+    pub match_creation_time: i64,
+    pub match_duration: i64,
+    pub match_id: i64,
+    pub maximum_kill_streak: i64,
+    pub primary_style: i64,
+    pub ps_hard_carry: i64,
+    pub ps_team_play: i64,
+    pub queue_type: String,
+    pub region_id: String,
+    pub role: i64,
+    pub runes: Vec<i64>,
+    pub sub_style: i64,
+    pub summoner_name: String,
+    pub summoner_spells: Vec<i64>,
+    pub team_a: Vec<MatchTeam>,
+    pub team_b: Vec<MatchTeam>,
+    pub version: String,
+    pub vision_score: i64,
+    pub win: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceScore {
+    pub hard_carry: i64,
+    pub summoner_name: String,
+    pub teamplay: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatchTeam {
+    pub champion_id: i64,
+    pub damage: i64,
+    pub role: i64,
+    pub summoner_name: String,
+    pub team_id: i64,
 }

@@ -25,96 +25,105 @@ fn main() {
         let thread_sender = thread_sender.clone();
         let client = client.clone();
         async move {
-            loop {
-                if let Ok(message) = thread_receiver.recv().await {
-                    let ctx = message.ctx;
-                    let message = match message.payload {
-                        ui::Payload::MatchSummaries { name, roles } => {
-                            let request = networking::fetch_match_summaries(
-                                name,
-                                "na1",
-                                roles,
-                                1,
-                                client.clone(),
-                            )
+            while let Ok(message) = thread_receiver.recv().await {
+                let ctx = message.ctx;
+                let message = match message.payload {
+                    ui::Payload::MatchSummaries { name, roles } => {
+                        let request = networking::fetch_match_summaries(
+                            name,
+                            "na1",
+                            roles,
+                            1,
+                            client.clone(),
+                        )
+                        .await
+                        .map_err(Errors::Request);
+
+                        Results::MatchSum(request)
+                    }
+                    ui::Payload::PlayerRanks { name } => {
+                        let request = networking::profile_ranks(name, client.clone())
                             .await
                             .map_err(Errors::Request);
 
-                            Results::MatchSum(request)
-                        }
-                        ui::Payload::PlayerRanks { name } => {
-                            let request = networking::profile_ranks(name, client.clone())
-                                .await
-                                .map_err(Errors::Request);
+                        Results::ProfileRanks(request)
+                    }
+                    ui::Payload::UpdatePlayer { name } => {
+                        let request = networking::update_player(name, client.clone())
+                            .await
+                            .map_err(Errors::Request);
 
-                            Results::ProfileRanks(request)
-                        }
-                        ui::Payload::UpdatePlayer { name } => {
-                            let request = networking::update_player(name, client.clone())
-                                .await
-                                .map_err(Errors::Request);
+                        Results::PlayerUpdate(request)
+                    }
+                    ui::Payload::PlayerRanking { name } => {
+                        let request = networking::player_ranking(name, client.clone())
+                            .await
+                            .map_err(Errors::Request);
 
-                            Results::PlayerUpdate(request)
-                        }
-                        ui::Payload::PlayerRanking { name } => {
-                            let request = networking::player_ranking(name, client.clone())
-                                .await
-                                .map_err(Errors::Request);
+                        Results::Ranking(request)
+                    }
+                    ui::Payload::PlayerInfo { name, version, version_index } => {
+                        let val = networking::player_info(name, "na1", client.clone()).await;
 
-                            Results::Ranking(request)
-                        }
-                        ui::Payload::PlayerInfo { name } => {
-                            let val = networking::player_info(name, "na1", client.clone()).await;
-
-                            if let Ok(info) = &val {
-                                if let Some(info) = &info.data.profile_player_info {
-                                    let res = get_icon(info.icon_id, client.clone()).await;
-                                    let wrapped = Results::PlayerIcon(res.map_err(Errors::Request));
-                                    let _ = thread_sender.send(wrapped).await.unwrap();
-                                }
+                        if let Ok(info) = &val {
+                            if let Some(info) = &info.data.profile_player_info {
+                                let res = get_icon(info.icon_id, &version[version_index], client.clone()).await;
+                                let wrapped = Results::PlayerIcon(res.map_err(Errors::Request));
+                                thread_sender.send(wrapped).await.unwrap();
                             }
-
-                            Results::PlayerInfo(val.map_err(Errors::Request))
                         }
-                        ui::Payload::GetVersions => {
-                            let res = client
-                                .get("https://ddragon.leagueoflegends.com/api/versions.json")
-                                .send()
-                                .await;
-                            let res = match res {
-                                Ok(val) => val.json().await,
-                                Err(err) => Err(err),
-                            };
 
-                            Results::Versions(res.map_err(Errors::Request))
-                        }
-                        ui::Payload::GetChampInfo { url } => {
-                            let res = client.get(url).send().await;
+                        Results::PlayerInfo(val.map_err(Errors::Request))
+                    }
+                    ui::Payload::GetVersions => {
+                        println!("Help me");
+                        let res = client
+                            .get("https://ddragon.leagueoflegends.com/api/versions.json")
+                            .send()
+                            .await;
 
-                            let res = match res {
-                                Ok(val) => val.json().await,
-                                Err(err) => Err(err),
-                            };
+                        println!("Request Finished!");
 
-                            Results::ChampJson(res.map_err(Errors::Request))
-                        }
-                        ui::Payload::GetChampImage { url, id } => {
-                            let res = client.get(url).send().await;
+                        let res = match res {
+                            Ok(val) => val.json().await,
+                            Err(err) => Err(err),
+                        };
 
-                            let res = match res {
-                                Ok(val) => val.bytes().await.map(|bytes| (bytes, id)),
-                                Err(err) => Err(err),
-                            };
+                        Results::Versions(res.map_err(Errors::Request))
+                    }
+                    ui::Payload::GetChampInfo { url } => {
+                        let res = client.get(url).send().await;
 
-                            Results::ChampImage(res.map_err(Errors::Request))
-                        }
-                    };
+                        let res = match res {
+                            Ok(val) => val.json().await,
+                            Err(err) => Err(err),
+                        };
 
-                    thread_sender.send(message).await.unwrap();
-                    ctx.request_repaint();
-                } else {
-                    break;
-                }
+                        Results::ChampJson(res.map_err(Errors::Request))
+                    }
+                    ui::Payload::GetChampImage { url, id } => {
+                        let res = client.get(url).send().await;
+
+                        let res = match res {
+                            Ok(val) => val.bytes().await.map(|bytes| (bytes, id)),
+                            Err(err) => Err(err),
+                        };
+
+                        Results::ChampImage(res.map_err(Errors::Request))
+                    }
+                    ui::Payload::GetMatchDetails { name, version, id } => {
+                        let id_i64: i64 = id.as_str().parse().unwrap();
+                        let res = networking::fetch_match(name, "na1", id, version, client.clone())
+                            .await
+                            .map(|json| (json, id_i64))
+                            .map_err(Errors::Request);
+
+                        Results::MatchDetails(Box::new(res))
+                    }
+                };
+
+                thread_sender.send(message).await.unwrap();
+                ctx.request_repaint();
             }
         }
     };
@@ -154,10 +163,14 @@ fn main() {
 //     });
 // }
 
-async fn get_icon(id: i64, client: reqwest::Client) -> Result<Bytes, reqwest::Error> {
+async fn get_icon(
+    id: i64,
+    version: &str,
+    client: reqwest::Client,
+) -> Result<Bytes, reqwest::Error> {
     let res = client
         .get(format!(
-            "http://ddragon.leagueoflegends.com/cdn/13.14.1/img/profileicon/{id}.png"
+            "http://ddragon.leagueoflegends.com/cdn/{version}/img/profileicon/{id}.png"
         ))
         .send()
         .await?;
@@ -168,5 +181,12 @@ async fn get_icon(id: i64, client: reqwest::Client) -> Result<Bytes, reqwest::Er
 #[derive(Debug)]
 pub enum Errors {
     Request(reqwest::Error),
-    GenericError,
+}
+
+impl ToString for Errors {
+    fn to_string(&self) -> String {
+        match self {
+            Errors::Request(err) => err.to_string(),
+        }
+    }
 }

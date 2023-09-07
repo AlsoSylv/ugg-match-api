@@ -1,0 +1,59 @@
+query Match($summonerName: String!, $regionId: String!, $matchId: String!, $version: String!) {
+    match(
+        matchId: $matchId
+        regionId: $regionId
+        summonerName: $summonerName
+        version: $version
+    ) {
+        winningTeam
+        performanceScore {
+            summonerName
+            teamplay
+            hardCarry
+        }
+        matchSummary {
+            gold
+            win
+            version
+            killParticipation
+            damage
+            runes
+            matchCreationTime
+            deaths
+            matchDuration
+            kills
+            cs
+            queueType
+            psHardCarry
+            jungleCs
+            level
+            regionId
+            psTeamPlay
+            assists
+            maximumKillStreak
+            visionScore
+            matchId
+            summonerName
+            role
+            subStyle
+            primaryStyle
+            summonerSpells
+            items
+            championId
+            teamA {
+                championId
+                damage
+                role
+                summonerName
+                teamId
+            }
+            teamB {
+                championId
+                damage
+                role
+                summonerName
+                teamId
+            }
+        }
+    }
+}

@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     graphql::structs::{
-        FetchMatchSummaries, FetchProfilePlayerInfo, FetchProfileRanks, GetOverallPlayerRanking,
-        UpdatePlayerProfile,
+        FetchMatch, FetchMatchSummaries, FetchProfilePlayerInfo, FetchProfileRanks,
+        GetOverallPlayerRanking, UpdatePlayerProfile,
     },
     structs,
 };
@@ -127,6 +127,29 @@ pub async fn player_info(
         FetchProfilePlayerInfo {
             region_id,
             summoner_name: name.to_lowercase(),
+        },
+        client,
+        BASE_URL,
+    )
+    .await
+}
+
+const FETCH_MATCH: &str = include_str!("../graphql/fetch_match.graphql");
+
+pub async fn fetch_match(
+    name: Arc<String>,
+    region_id: &'static str,
+    id: String,
+    version: String,
+    client: reqwest::Client,
+) -> Result<structs::GetMatch, reqwest::Error> {
+    request(
+        FETCH_MATCH,
+        FetchMatch {
+            region_id,
+            summoner_name: name.to_string(),
+            match_id: id,
+            version,
         },
         client,
         BASE_URL,

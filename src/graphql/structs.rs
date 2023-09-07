@@ -47,3 +47,12 @@ pub struct FetchProfilePlayerInfo {
     pub region_id: &'static str,
     pub summoner_name: String,
 }
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchMatch {
+    pub summoner_name: String,
+    pub region_id: &'static str,
+    pub match_id: String,
+    pub version: String,
+}

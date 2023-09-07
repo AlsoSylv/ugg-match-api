@@ -1,11 +1,17 @@
-use crate::structs::{self, ChampData, ChampionJson, MatchSummary, OverallRanking, RankScore};
+use crate::structs::{
+    self, ChampData, ChampionJson, GetMatch, Match, MatchSummary, OverallRanking, RankScore,
+};
 use crate::Errors;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use eframe::egui::{self, TextBuffer, TextureOptions, Vec2};
 use eframe::epaint::ColorImage;
+use std::cell::OnceCell;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub enum Results {
     MatchSum(Result<structs::PlayerMatchSummeries, Errors>),
     PlayerUpdate(Result<structs::UpdatePlayer, Errors>),
@@ -13,9 +19,10 @@ pub enum Results {
     Ranking(Result<structs::PlayerRanking, Errors>),
     PlayerInfo(Result<structs::PlayerInfo, Errors>),
     PlayerIcon(Result<bytes::Bytes, Errors>),
-    Versions(Result<Vec<String>, Errors>),
+    Versions(Result<Arc<[String]>, Errors>),
     ChampJson(Result<ChampionJson, Errors>),
     ChampImage(Result<(bytes::Bytes, i64), Errors>),
+    MatchDetails(Box<Result<(GetMatch, i64), Errors>>),
 }
 
 pub struct Message {
@@ -23,15 +30,39 @@ pub struct Message {
     pub payload: Payload,
 }
 
+#[derive(Debug)]
 pub enum Payload {
-    MatchSummaries { name: Arc<String>, roles: Vec<u8> },
-    PlayerRanks { name: Arc<String> },
-    UpdatePlayer { name: Arc<String> },
-    PlayerRanking { name: Arc<String> },
-    PlayerInfo { name: Arc<String> },
+    MatchSummaries {
+        name: Arc<String>,
+        roles: Vec<u8>,
+    },
+    PlayerRanks {
+        name: Arc<String>,
+    },
+    UpdatePlayer {
+        name: Arc<String>,
+    },
+    PlayerRanking {
+        name: Arc<String>,
+    },
+    PlayerInfo {
+        name: Arc<String>,
+        version: Arc<[String]>,
+        version_index: usize,
+    },
     GetVersions,
-    GetChampInfo { url: String },
-    GetChampImage { url: String, id: i64 },
+    GetChampInfo {
+        url: String,
+    },
+    GetChampImage {
+        url: String,
+        id: i64,
+    },
+    GetMatchDetails {
+        name: Arc<String>,
+        version: String,
+        id: String,
+    },
 }
 
 /// TODO: Store player data in a sub struct
@@ -46,40 +77,34 @@ pub struct MyEguiApp {
     ranking: Option<OverallRanking>,
     player_icon: Option<egui::TextureHandle>,
     data_dragon: DataDragon,
-
     refresh_enabled: bool,
     update_enabled: bool,
-
-    id_name_champ_map: Option<HashMap<i64, Champ>>,
+    id_name_champ_map: OnceCell<HashMap<i64, Champ>>,
+    match_summeries: Option<HashMap<i64, Option<Match>>>,
+    player_icons: Option<HashMap<i64, Option<egui::TextureHandle>>>,
 }
 
 struct DataDragon {
-    versions: Option<Vec<String>>,
+    versions: OnceCell<Arc<[String]>>,
     ver_started: bool,
-    // champ_json: Option<ChampionJson>,
 }
 
 pub struct Champ {
     pub key: String,
-    // pub id: String,
     pub name: String,
-    // pub title: String,
-    // pub blurb: String,
-    // pub tags: Vec<Tag>,
-    // pub partype: String,
-    // pub stats: HashMap<String, f64>,
     image: Option<egui::TextureHandle>,
     image_started: bool,
 }
 
-// pub enum Tag {
-//     Assassin,
-//     Fighter,
-//     Mage,
-//     Marksman,
-//     Support,
-//     Tank,
-// }
+impl Debug for Champ {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Champ")
+            .field("key", &self.key)
+            .field("name", &self.name)
+            .field("image_started", &self.image_started)
+            .finish()
+    }
+}
 
 impl ChampData {
     fn into(self) -> Champ {
@@ -124,13 +149,15 @@ impl MyEguiApp {
             update_enabled: false,
             player_icon: None,
             data_dragon: DataDragon {
-                versions: None,
+                versions: Default::default(),
                 ver_started: false,
                 // champ_json: None,
             },
-            id_name_champ_map: None,
+            id_name_champ_map: Default::default(),
             messenger: sender,
             receiver,
+            match_summeries: None,
+            player_icons: None,
         }
     }
 
@@ -145,7 +172,7 @@ impl MyEguiApp {
 
     /// This long line of function calls, well looking like bullshit
     /// actually drives the entire state of the GUI to change!
-    fn update_matches(&self, ctx: &egui::Context, name: Arc<String>) {
+    fn update_matches(&self, ctx: &egui::Context, name: Arc<String>, versions: Arc<[String]>) {
         self.send_message(
             ctx,
             Payload::MatchSummaries {
@@ -155,57 +182,79 @@ impl MyEguiApp {
         );
         self.send_message(ctx, Payload::PlayerRanks { name: name.clone() });
         self.send_message(ctx, Payload::PlayerRanking { name: name.clone() });
-        self.send_message(ctx, Payload::PlayerInfo { name: name.clone() });
+        self.send_message(
+            ctx,
+            Payload::PlayerInfo {
+                name: name.clone(),
+                version: versions,
+                version_index: 0
+            },
+        );
     }
 
     fn match_page(
-        &mut self,
+        &self,
         summary: &MatchSummary,
         ui: &mut egui::Ui,
         ctx: &egui::Context,
-        map: &mut HashMap<i64, Champ>,
-        versions: &Vec<String>,
+        champ: &Champ,
     ) {
-        let champ = map.get_mut(&summary.champion_id).unwrap();
         let id = ui.make_persistent_id(summary.match_id);
 
         egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, false)
             .show_header(ui, |ui| {
                 if let Some(image) = &champ.image {
                     ui.image(image, Vec2::splat(40.0));
-                    ui.label(format!(
-                        "{} {}",
-                        champ.name, UGG_ROLES_REVERSED[summary.role as usize]
-                    ));
                 } else {
                     ui.spinner();
-
-                    if !champ.image_started {
-                        self.send_message(
-                            ctx,
-                            Payload::GetChampImage {
-                                url: format!(
-                                    "http://ddragon.leagueoflegends.com/cdn/{}/img/champion/{}.png",
-                                    versions[0], champ.key
-                                ),
-                                id: summary.champion_id,
-                            },
-                        );
-
-                        champ.image_started = true;
-                    }
                 }
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(&champ.name);
+                        ui.label(UGG_ROLES_REVERSED[summary.role as usize]);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label({
+                            if summary.win {
+                                "Win"
+                            } else {
+                                "Loss"
+                            }
+                        });
+
+                        ui.label(format!(
+                            "{}/{}/{}",
+                            summary.kills, summary.deaths, summary.assists
+                        ));
+                    });
+                });
             })
             .body(|ui| {
-                ui.label(summary.champion_id.to_string());
-                ui.label(format!(
-                    "Match duration: {}",
-                    format_time(summary.match_duration)
-                ));
-                ui.label(format!(
-                    "KDA: {}/{}/{}",
-                    summary.kills, summary.deaths, summary.assists
-                ));
+                if let Some(map) = &self.match_summeries {
+                    if let Some(Some(md)) = map.get(&summary.match_id) {
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                for player in &md.match_summary.team_a {
+                                    ui.horizontal(|ui| {
+                                        ui.label(UGG_ROLES_REVERSED[player.role as usize]);
+                                        ui.label(&player.summoner_name);
+                                    });
+                                }
+                            });
+
+                            ui.separator();
+
+                            ui.vertical(|ui| {
+                                for player in &md.match_summary.team_b {
+                                    ui.horizontal(|ui| {
+                                        ui.label(UGG_ROLES_REVERSED[player.role as usize]);
+                                        ui.label(&player.summoner_name);
+                                    });
+                                }
+                            });
+                        });
+                    }
+                }
             });
     }
 
@@ -214,7 +263,53 @@ impl MyEguiApp {
         self.send_message(ctx, Payload::UpdatePlayer { name: name.clone() });
     }
 
-    fn update_data(&mut self, ctx: &egui::Context) {
+    fn load_version(&mut self, ctx: &egui::Context) {
+        if !self.data_dragon.ver_started {
+            println!("Request sent!");
+            self.send_message(ctx, Payload::GetVersions);
+            self.data_dragon.ver_started = true;
+        }
+
+        if let Ok(Results::Versions(versions)) = self.receiver.try_recv() {
+            match versions {
+                Ok(versions) => {
+                    self.send_message(ctx, Payload::GetChampInfo { url: format!("http://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json", versions[0]) } );
+                    self.data_dragon.versions.set(versions).unwrap();
+                }
+                Err(err) => {
+                    egui::Window::new("Version Error").show(ctx, |ui| ui.label(err.to_string()));
+                }
+            }
+        }
+    }
+
+    fn load_champ_json(&mut self, ctx: &egui::Context) {
+        if let Ok(Results::ChampJson(json)) = self.receiver.try_recv() {
+            match json {
+                Ok(json) => {
+                    self.id_name_champ_map.get_or_init(|| {
+                        let mut id_name_champ_map = HashMap::with_capacity(json.data.len());
+                        for (_, data) in json.data {
+                            let id: i64 = data.id.parse().unwrap();
+                            id_name_champ_map.insert(id, data.into());
+                        }
+
+                        id_name_champ_map
+                    });
+                }
+                Err(err) => {
+                    egui::Window::new("Champ Json Error").show(ctx, |ui| ui.label(err.to_string()));
+                }
+            }
+        }
+    }
+
+    fn update_data(
+        &mut self,
+        ctx: &egui::Context,
+        versions: Arc<[String]>,
+        id_name_champ_map: &mut HashMap<i64, Champ>,
+    ) {
         if !self.active_player.is_empty() {
             self.refresh_enabled = true;
             self.update_enabled = true;
@@ -223,15 +318,11 @@ impl MyEguiApp {
             self.update_enabled = false;
         };
 
-        if !self.data_dragon.ver_started {
-            self.send_message(ctx, Payload::GetVersions);
-            self.data_dragon.ver_started = true;
-        }
-
         if let Ok(receiver) = self.receiver.try_recv() {
             match receiver {
                 Results::MatchSum(match_sums) => match match_sums {
                     Ok(matches) => {
+                        self.match_summeries = Some(HashMap::with_capacity(20));
                         self.summeries =
                             Some(matches.data.fetch_player_match_summaries.match_summaries)
                     }
@@ -243,7 +334,11 @@ impl MyEguiApp {
                     Ok(updated) => {
                         let data = updated.data.update_player_profile;
                         if data.success {
-                            self.update_matches(ctx, Arc::new(self.active_player.clone()));
+                            self.update_matches(
+                                ctx,
+                                Arc::new(self.active_player.clone()),
+                                versions.clone(),
+                            );
                         } else {
                             dbg!("{:?}", data.error_reason);
                         }
@@ -254,7 +349,6 @@ impl MyEguiApp {
                 },
                 Results::ProfileRanks(rank) => match rank {
                     Ok(rank) => {
-                        println!("A");
                         let data = rank
                             .data
                             .fetch_profile_ranks
@@ -276,7 +370,6 @@ impl MyEguiApp {
                 },
                 Results::Ranking(ranking) => match ranking {
                     Ok(ranking) => {
-                        println!("A");
                         self.ranking = ranking.data.overall_ranking;
                     }
                     Err(err) => {
@@ -286,7 +379,6 @@ impl MyEguiApp {
                 // Todo: Display this info
                 Results::PlayerInfo(info) => match info {
                     Ok(info) => {
-                        // println!("A");
                         println!("{:?}", info);
                     }
                     Err(err) => {
@@ -295,7 +387,6 @@ impl MyEguiApp {
                 },
                 Results::PlayerIcon(data) => match data {
                     Ok(icon) => {
-                        println!("A");
                         let mut decoder = png::Decoder::new(&*icon);
                         let headers = decoder
                             .read_header_info()
@@ -316,28 +407,6 @@ impl MyEguiApp {
                             TextureOptions::LINEAR,
                         );
                         let _ = self.player_icon.insert(texture);
-                    }
-                    Err(err) => {
-                        dbg!("{:?}", err);
-                    }
-                },
-                Results::Versions(vers) => match vers {
-                    Ok(versions) => {
-                        self.send_message(ctx, Payload::GetChampInfo { url: format!("http://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json", versions[0]) } );
-                        self.data_dragon.versions = Some(versions);
-                    }
-                    Err(err) => {
-                        dbg!("{:?}", err);
-                    }
-                },
-                Results::ChampJson(json) => match json {
-                    Ok(json) => {
-                        let mut id_name_champ_map = HashMap::with_capacity(json.data.len());
-                        for (_, data) in json.data {
-                            let id: i64 = data.id.parse().unwrap();
-                            id_name_champ_map.insert(id, data.into());
-                        }
-                        self.id_name_champ_map = Some(id_name_champ_map);
                     }
                     Err(err) => {
                         dbg!("{:?}", err);
@@ -367,12 +436,7 @@ impl MyEguiApp {
                             TextureOptions::LINEAR,
                         );
 
-                        let handle = self
-                            .id_name_champ_map
-                            .as_mut()
-                            .unwrap()
-                            .get_mut(&id)
-                            .unwrap();
+                        let handle = id_name_champ_map.get_mut(&id).unwrap();
 
                         handle.image = Some(texture);
                     }
@@ -380,186 +444,221 @@ impl MyEguiApp {
                         dbg!("{:?}", err);
                     }
                 },
+                Results::MatchDetails(deets) => match *deets {
+                    Ok((match_details, id)) => {
+                        self.match_summeries
+                            .as_mut()
+                            .expect("The app has reached an impossible state")
+                            .insert(id, Some(match_details.data.data_match));
+                    }
+                    Err(err) => {
+                        dbg!("{:?}", err);
+                    }
+                },
+
+                payload => panic!(
+                    "App has reached an impossible state, this should already be covered {:?}",
+                    payload
+                ),
             }
         };
+    }
+
+    fn zero_player(&mut self) {
+        self.summeries = None;
+        self.player_icon = None;
+        self.rank = None;
+        self.ranking = None;
     }
 }
 
 impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.update_data(ctx);
-        if let Some(versions) = self.data_dragon.versions.take() {
-            if let Some(mut id_name_champ_map) = self.id_name_champ_map.take() {
-                egui::SidePanel::left("side_panel")
-                    .resizable(false)
-                    .show(ctx, |ui| {
-                        ui.vertical(|ui| {
-                            ui.add_space(5.0);
-                            ui.horizontal(|ui| {
-                                ui.label("Player: ");
-
-                                let search_bar = ui.text_edit_singleline(&mut self.active_player);
-
-                                if search_bar.clicked() || search_bar.lost_focus() {
-                                    if !self.active_player.is_empty() {
-                                        self.update_matches(
-                                            ctx,
-                                            Arc::new(self.active_player.clone()),
-                                        );
-                                    } else {
-                                        self.summeries = None;
-                                        self.player_icon = None;
-                                        self.rank = None;
-                                    }
-                                }
-
-                                if search_bar.changed() && self.active_player.is_empty() {
-                                    self.summeries = None;
-                                    self.player_icon = None;
-                                    self.rank = None;
-                                }
-                            });
-
-                            ui.add_space(5.0);
-
-                            ui.horizontal(|ui| {
-                                ui.label("Roles: ");
-
-                                egui::ComboBox::from_id_source("roles")
-                                    .selected_text(ROLES[self.role as usize])
-                                    .show_ui(ui, |ui| {
-                                        for (index, text) in ROLES.iter().enumerate() {
-                                            ui.selectable_value(&mut self.role, index as u8, *text);
-                                        }
-                                    });
-                            });
-
-                            ui.add_space(5.0);
-
-                            let button = ui.add_enabled(
-                                self.refresh_enabled,
-                                egui::Button::new("Refresh Player"),
-                            );
-
-                            if button.clicked() {
-                                self.update_matches(ctx, Arc::new(self.active_player.clone()));
-                            };
-
-                            ui.add_space(5.0);
-
-                            let button = ui.add_enabled(
-                                self.update_enabled,
-                                egui::Button::new("Update Player"),
-                            );
-
-                            if button.clicked() {
-                                self.update_player(ctx);
-                            };
-
-                            egui::TopBottomPanel::bottom("bottom_panel").show_inside(ui, |ui| {
-                                ui.add_space(5.0);
-                                ui.with_layout(
-                                    egui::Layout::left_to_right(egui::Align::LEFT),
-                                    |ui| {
-                                        egui::widgets::global_dark_light_mode_switch(ui);
-                                    },
-                                );
-                            });
-                        });
-                    });
-
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                        ui.horizontal(|ui| {
-                            if let Some(texture) = &self.player_icon {
-                                ui.image(texture, Vec2::splat(50.0));
-                            } else if !self.active_player.is_empty() && self.summeries.is_some() {
-                                ui.spinner();
-                            }
-
-                            if let Some(scores) = &self.rank {
-                                if scores.is_empty() {
-                                    ui.vertical(|ui| {
-                                        ui.label("Unranked");
-                                        ui.label("LP: None");
-                                        ui.label("Ranking: None");
-                                    });
-                                } else {
-                                    for rank in scores {
-                                        ui.vertical(|ui| {
-                                            ui.label(format!("Rank: {}", rank.rank));
-                                            ui.label(format!("LP: {}", rank.lp));
-                                            ui.label(format!("Queue: {}", rank.queue_type));
-                                        });
-
-                                        ui.separator();
-
-                                        ui.vertical(|ui| {
-                                            ui.label(format!("Wins: {}", rank.wins));
-                                            ui.label(format!("Losses: {}", rank.losses));
-                                            if let Some(ranking) = &self.ranking {
-                                                ui.label(format!(
-                                                    "Ranking: {} / {}",
-                                                    ranking.overall_ranking,
-                                                    ranking.total_player_count
-                                                ));
-                                            } else {
-                                                ui.label("Ranking: None");
-                                            }
-                                        });
-
-                                        ui.separator();
-                                    }
-                                }
-                            };
-                        });
-
-                        ui.add_space(5.0);
-
-                        let summeries = self.summeries.take();
-
-                        if let Some(sums) = &summeries {
-                            ui.separator();
-
-                            ui.add_space(5.0);
-
-                            egui::ScrollArea::vertical()
-                                .max_height(ui.available_height())
-                                .show(ui, |ui| {
-                                    if sums.is_empty() {
-                                        ui.label("No Data");
-                                    } else {
-                                        for summary in sums {
-                                            self.match_page(
-                                                summary,
-                                                ui,
-                                                ctx,
-                                                &mut id_name_champ_map,
-                                                &versions,
-                                            );
-                                            ui.separator();
-                                        }
-                                    }
-                                });
-                        }
-
-                        self.summeries = summeries;
-                    });
-                });
-
-                self.id_name_champ_map = Some(id_name_champ_map);
-            } else {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.spinner();
-                });
-            }
-            self.data_dragon.versions = Some(versions)
-        } else {
+        let Some(versions) = self.data_dragon.versions.take() else {
+            self.load_version(ctx);
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.spinner();
             });
-        }
-        ctx.request_repaint();
+            
+            return;
+        };
+
+        let Some(mut id_name_champ_map) = self.id_name_champ_map.take() else {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.spinner();
+            });
+
+            self.load_champ_json(ctx);
+            self.data_dragon.versions.set(versions).unwrap();
+
+            return;
+        };
+
+        self.update_data(ctx, versions.clone(), &mut id_name_champ_map);
+
+        egui::SidePanel::left("side_panel")
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.vertical(|ui| {
+                    ui.add_space(5.0);
+                    ui.horizontal(|ui| {
+                        ui.label("Player: ");
+
+                        let search_bar = ui.text_edit_singleline(&mut self.active_player);
+
+                        if search_bar.clicked() && !self.active_player.is_empty() {
+                            if !self.active_player.is_empty() {
+                                let name = Arc::new(self.active_player.clone());
+                                self.update_matches(ctx, name.clone(), versions.clone());
+                            } else {
+                                self.zero_player();
+                            }
+                        }
+
+                        if search_bar.changed() {
+                            self.zero_player();
+                        }
+                    });
+
+                    ui.add_space(5.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label("Roles: ");
+
+                        egui::ComboBox::from_id_source("roles")
+                            .selected_text(ROLES[self.role as usize])
+                            .show_ui(ui, |ui| {
+                                ROLES.iter().enumerate().for_each(|(index, text)| {
+                                    ui.selectable_value(&mut self.role, index as u8, *text);
+                                })
+                            });
+                    });
+
+                    ui.add_space(5.0);
+
+                    let button =
+                        ui.add_enabled(self.refresh_enabled, egui::Button::new("Refresh Player"));
+
+                    if button.clicked() {
+                        let name = Arc::new(self.active_player.clone());
+                        self.update_matches(ctx, name.clone(), versions.clone());
+                    };
+
+                    ui.add_space(5.0);
+
+                    let button =
+                        ui.add_enabled(self.update_enabled, egui::Button::new("Update Player"));
+
+                    if button.clicked() {
+                        self.update_player(ctx);
+                    };
+
+                    egui::TopBottomPanel::bottom("bottom_panel").show_inside(ui, |ui| {
+                        ui.add_space(5.0);
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::LEFT), |ui| {
+                            egui::widgets::global_dark_light_mode_switch(ui);
+                        });
+                    });
+                });
+            });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+        ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
+            ui.horizontal(|ui| {
+                if let Some(texture) = &self.player_icon {
+                    ui.image(texture, Vec2::splat(50.0));
+                } else if !self.active_player.is_empty() && self.summeries.is_some() {
+                    ui.spinner();
+                }
+
+                if let Some(scores) = &self.rank {
+                    if scores.is_empty() {
+                        ui.vertical(|ui| {
+                            ui.label("Unranked");
+                            ui.label("LP: None");
+                            ui.label("Ranking: None");
+                        });
+                    } else {
+                        for rank in scores {
+                            ui.vertical(|ui| {
+                                ui.label(format!("Rank: {}", rank.rank));
+                                ui.label(format!("LP: {}", rank.lp));
+                                ui.label(format!("Queue: {}", rank.queue_type));
+                            });
+
+                            ui.separator();
+
+                            ui.vertical(|ui| {
+                                ui.label(format!("Wins: {}", rank.wins));
+                                ui.label(format!("Losses: {}", rank.losses));
+                                if let Some(ranking) = &self.ranking {
+                                    ui.label(format!(
+                                        "Ranking: {} / {}",
+                                        ranking.overall_ranking,
+                                        ranking.total_player_count
+                                    ));
+                                } else {
+                                    ui.label("Ranking: None");
+                                }
+                            });
+
+                            ui.separator();
+                        }
+                    }
+                };
+            });
+
+            ui.add_space(5.0);
+
+            if let Some(sums) = self.summeries.take() {
+                ui.separator();
+
+                egui::ScrollArea::vertical()
+                    .max_height(ui.available_height())
+                    .show(ui, |ui| {
+                        if sums.is_empty() {
+                            ui.label("No Data");
+                        } else {
+                            for summary in &sums {
+                                if let Some(map) = &mut self.match_summeries {
+                                    if let Entry::Vacant(e) = map.entry(summary.match_id) {
+                                        e.insert(None);
+                                        self.send_message(ctx, Payload::GetMatchDetails { name: Arc::new(self.active_player.clone()), version: summary.version.clone(), id: summary.match_id.to_string() });
+                                    }
+                                }
+
+                                let champ = id_name_champ_map.get_mut(&summary.champion_id).unwrap();
+                                if !champ.image_started {
+                                    self.send_message(
+                                        ctx,
+                                        Payload::GetChampImage {
+                                            url: format!(
+                                                "http://ddragon.leagueoflegends.com/cdn/{}/img/champion/{}.png",
+                                                versions[0], champ.key
+                                            ),
+                                            id: summary.champion_id,
+                                        },
+                                    );
+                                    champ.image_started = true;
+                                }
+
+                                self.match_page(
+                                    summary,
+                                    ui,
+                                    ctx,
+                                    champ,
+                                );
+                                ui.separator();
+                            }
+                        }
+                    });
+                self.summeries = Some(sums);
+            }
+        });
+    });
+
+        self.data_dragon.versions.set(versions).unwrap();
+        self.id_name_champ_map.set(id_name_champ_map).unwrap();
     }
 }
 
