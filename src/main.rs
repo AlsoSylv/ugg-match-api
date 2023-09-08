@@ -62,12 +62,18 @@ fn main() {
 
                         Results::Ranking(request)
                     }
-                    ui::Payload::PlayerInfo { name, version, version_index } => {
+                    ui::Payload::PlayerInfo {
+                        name,
+                        version,
+                        version_index,
+                    } => {
                         let val = networking::player_info(name, "na1", client.clone()).await;
 
                         if let Ok(info) = &val {
                             if let Some(info) = &info.data.profile_player_info {
-                                let res = get_icon(info.icon_id, &version[version_index], client.clone()).await;
+                                let res =
+                                    get_icon(info.icon_id, &version[version_index], client.clone())
+                                        .await;
                                 let wrapped = Results::PlayerIcon(res.map_err(Errors::Request));
                                 thread_sender.send(wrapped).await.unwrap();
                             }
