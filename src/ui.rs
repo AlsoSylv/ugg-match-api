@@ -9,6 +9,7 @@ use std::cell::OnceCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -18,7 +19,7 @@ pub enum Results {
     ProfileRanks(Result<structs::PlayerRank, Errors>),
     Ranking(Result<structs::PlayerRanking, Errors>),
     PlayerInfo(Result<structs::PlayerInfo, Errors>),
-    PlayerIcon(Result<bytes::Bytes, Errors>),
+    PlayerIcon(Result<(i64, bytes::Bytes), Errors>),
     Versions(Result<Arc<[String]>, Errors>),
     ChampJson(Result<ChampionJson, Errors>),
     ChampImage(Result<(bytes::Bytes, i64), Errors>),
@@ -60,7 +61,7 @@ pub enum Payload {
     },
     GetMatchDetails {
         name: Arc<String>,
-        version: String,
+        version: Arc<String>,
         id: String,
     },
 }
@@ -71,17 +72,18 @@ pub struct MyEguiApp {
     receiver: async_channel::Receiver<Results>,
 
     active_player: String,
+    message_name: Arc<String>,
     role: u8,
     summeries: Option<Vec<MatchSummary>>,
     rank: Option<Vec<RankScore>>,
     ranking: Option<OverallRanking>,
-    player_icon: Option<egui::TextureHandle>,
     data_dragon: DataDragon,
     refresh_enabled: bool,
     update_enabled: bool,
     id_name_champ_map: OnceCell<HashMap<i64, Champ>>,
     match_summeries: Option<HashMap<i64, Option<Match>>>,
-    player_icons: Option<HashMap<i64, Option<egui::TextureHandle>>>,
+    player_icons: HashMap<i64, Option<egui::TextureHandle>>,
+    icon_id: i64,
 }
 
 struct DataDragon {
@@ -93,7 +95,7 @@ pub struct Champ {
     pub key: String,
     pub name: String,
     image: Option<egui::TextureHandle>,
-    image_started: bool,
+    image_started: AtomicBool,
 }
 
 impl Debug for Champ {
@@ -112,7 +114,7 @@ impl ChampData {
             key: self.key,
             name: self.name,
             image: None,
-            image_started: false,
+            image_started: AtomicBool::new(false),
         }
     }
 }
@@ -141,13 +143,14 @@ impl MyEguiApp {
     ) -> Self {
         Self {
             active_player: Default::default(),
+            message_name: Default::default(),
             role: 5,
             summeries: None,
             rank: None,
             ranking: None,
             refresh_enabled: false,
             update_enabled: false,
-            player_icon: None,
+            // player_icon: None,
             data_dragon: DataDragon {
                 versions: Default::default(),
                 ver_started: false,
@@ -157,7 +160,8 @@ impl MyEguiApp {
             messenger: sender,
             receiver,
             match_summeries: None,
-            player_icons: None,
+            player_icons: Default::default(),
+            icon_id: -1,
         }
     }
 
@@ -208,48 +212,49 @@ impl MyEguiApp {
                 } else {
                     ui.spinner();
                 }
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(&champ.name);
-                        ui.label(UGG_ROLES_REVERSED[summary.role as usize]);
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label({
-                            if summary.win {
-                                "Win"
-                            } else {
-                                "Loss"
-                            }
-                        });
 
-                        ui.label(format!(
-                            "{}/{}/{}",
-                            summary.kills, summary.deaths, summary.assists
-                        ));
-                    });
+                ui.vertical(|ui| {
+                    ui.label(&champ.name);
+                    ui.label(UGG_ROLES_REVERSED[summary.role as usize]);
+                });
+                ui.vertical(|ui| {
+                    let win;
+
+                    if summary.win {
+                        win = "Win";
+                    } else {
+                        win = "Loss";
+                    }
+
+                    ui.label(win);
+
+                    let kda = format!("{}/{}/{}", summary.kills, summary.deaths, summary.assists);
+
+                    ui.label(kda);
                 });
             })
             .body(|ui| {
                 if let Some(map) = &self.match_summeries {
                     if let Some(Some(md)) = map.get(&summary.match_id) {
+                        let player_data = |ui: &mut Ui, role_index: u8, name: &str| {
+                            ui.horizontal(|ui| {
+                                ui.label(UGG_ROLES_REVERSED[role_index as usize]);
+                                ui.label(name);
+                            });
+                        };
+
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
-                                for player in &md.match_summary.team_a {
-                                    ui.horizontal(|ui| {
-                                        ui.label(UGG_ROLES_REVERSED[player.role as usize]);
-                                        ui.label(&player.summoner_name);
-                                    });
+                                for player in md.match_summary.team_a.iter() {
+                                    player_data(ui, player.role, &player.summoner_name);
                                 }
                             });
 
                             ui.separator();
 
                             ui.vertical(|ui| {
-                                for player in &md.match_summary.team_b {
-                                    ui.horizontal(|ui| {
-                                        ui.label(UGG_ROLES_REVERSED[player.role as usize]);
-                                        ui.label(&player.summoner_name);
-                                    });
+                                for player in md.match_summary.team_b.iter() {
+                                    player_data(ui, player.role, &player.summoner_name);
                                 }
                             });
                         });
@@ -259,8 +264,12 @@ impl MyEguiApp {
     }
 
     fn update_player(&self, ctx: &egui::Context) {
-        let name = Arc::new(self.active_player.clone());
-        self.send_message(ctx, Payload::UpdatePlayer { name: name.clone() });
+        self.send_message(
+            ctx,
+            Payload::UpdatePlayer {
+                name: self.message_name.clone(),
+            },
+        );
     }
 
     fn load_version(&mut self, ctx: &egui::Context) {
@@ -320,23 +329,24 @@ impl MyEguiApp {
                             if let Some(map) = &mut self.match_summeries {
                                 if let Entry::Vacant(e) = map.entry(summary.match_id) {
                                     e.insert(None);
-                                    self.send_message(ctx, Payload::GetMatchDetails { name: Arc::new(self.active_player.clone()), version: summary.version.clone(), id: summary.match_id.to_string() });
+                                    self.send_message(ctx, Payload::GetMatchDetails { name: self.message_name.clone(), version: summary.version.clone(), id: summary.match_id.to_string() });
                                 }
                             }
+                            let champ = &id_name_champ_map[&summary.champion_id];
 
-                            let champ = id_name_champ_map.get_mut(&summary.champion_id).unwrap();
-                            if !champ.image_started {
+                            if !champ.image_started.load(std::sync::atomic::Ordering::Relaxed) {
+                                let key = &champ.key;
                                 self.send_message(
                                     ctx,
                                     Payload::GetChampImage {
                                         url: format!(
                                             "http://ddragon.leagueoflegends.com/cdn/{}/img/champion/{}.png",
-                                            versions[0], champ.key
+                                            versions[0], key
                                         ),
                                         id: summary.champion_id,
                                     },
                                 );
-                                champ.image_started = true;
+                                champ.image_started.store(true, std::sync::atomic::Ordering::Relaxed);
                             }
                         });
                         self.summeries = Some(summaries)
@@ -349,11 +359,7 @@ impl MyEguiApp {
                     Ok(updated) => {
                         let data = updated.data.update_player_profile;
                         if data.success {
-                            self.update_matches(
-                                ctx,
-                                Arc::new(self.active_player.clone()),
-                                versions.clone(),
-                            );
+                            self.update_matches(ctx, self.message_name.clone(), versions.clone());
                         } else {
                             dbg!("{:?}", data.error_reason);
                         }
@@ -394,14 +400,14 @@ impl MyEguiApp {
                 // Todo: Display this info
                 Results::PlayerInfo(info) => match info {
                     Ok(info) => {
-                        println!("{:?}", info);
+                        self.icon_id = info.data.profile_player_info.unwrap().icon_id;
                     }
                     Err(err) => {
                         dbg!("{:?}", err);
                     }
                 },
                 Results::PlayerIcon(data) => match data {
-                    Ok(icon) => {
+                    Ok((id, icon)) => {
                         let mut decoder = png::Decoder::new(&*icon);
                         let headers = decoder
                             .read_header_info()
@@ -421,7 +427,7 @@ impl MyEguiApp {
                             ColorImage::from_rgb([x, y], &buf),
                             TextureOptions::LINEAR,
                         );
-                        let _ = self.player_icon.insert(texture);
+                        let _ = self.player_icons.insert(id, Some(texture));
                     }
                     Err(err) => {
                         dbg!("{:?}", err);
@@ -471,7 +477,7 @@ impl MyEguiApp {
                     }
                 },
 
-                payload => panic!(
+                payload => unreachable!(
                     "App has reached an impossible state, this should already be covered {:?}",
                     payload
                 ),
@@ -481,7 +487,7 @@ impl MyEguiApp {
 
     fn zero_player(&mut self) {
         self.summeries = None;
-        self.player_icon = None;
+        // self.player_icon = None;
         self.rank = None;
         self.ranking = None;
     }
@@ -529,8 +535,8 @@ impl eframe::App for MyEguiApp {
 
                 if search_bar.clicked() && !self.active_player.is_empty() {
                     if !self.active_player.is_empty() {
-                        let name = Arc::new(self.active_player.clone());
-                        self.update_matches(ctx, name.clone(), versions.clone());
+                        self.message_name = Arc::new(self.active_player.clone());
+                        self.update_matches(ctx, self.message_name.clone(), versions.clone());
                     } else {
                         self.zero_player();
                     }
@@ -559,8 +565,7 @@ impl eframe::App for MyEguiApp {
 
             let button = egui::Button::new("Refresh Player");
             if ui.add_enabled(self.refresh_enabled, button).clicked() {
-                let name = Arc::new(self.active_player.clone());
-                self.update_matches(ctx, name.clone(), versions.clone());
+                self.update_matches(ctx, self.message_name.clone(), versions.clone());
             }
 
             ui.add_space(5.0);
@@ -585,7 +590,7 @@ impl eframe::App for MyEguiApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
-                    if let Some(texture) = &self.player_icon {
+                    if let Some(Some(texture)) = self.player_icons.get(&self.icon_id) {
                         ui.image(texture, Vec2::splat(50.0));
                     } else if !self.active_player.is_empty() && self.summeries.is_some() {
                         ui.spinner();

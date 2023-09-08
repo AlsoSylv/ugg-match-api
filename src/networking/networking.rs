@@ -33,7 +33,7 @@ pub async fn fetch_match_summaries(
             region_id,
             role,
             season_ids: vec![SEASON_ID],
-            summoner_name: name.to_lowercase(),
+            summoner_name: name,
         },
         client,
         BASE_URL,
@@ -69,7 +69,7 @@ pub async fn update_player(
         UPDATE_PLAYER,
         UpdatePlayerProfile {
             region_id: "na1",
-            summoner_name: name.to_lowercase(),
+            summoner_name: name,
         },
         client,
         BASE_URL,
@@ -87,7 +87,7 @@ pub async fn profile_ranks(
         PROFILE_RANKS,
         FetchProfileRanks {
             region_id: "na1",
-            summoner_name: name.to_lowercase(),
+            summoner_name: name,
             season_id: SEASON_ID,
         },
         client,
@@ -106,7 +106,7 @@ pub async fn player_ranking(
         PLAYER_RANKING,
         GetOverallPlayerRanking {
             region_id: "na1",
-            summoner_name: name.to_lowercase(),
+            summoner_name: name,
             queue_type: 420,
         },
         client,
@@ -126,7 +126,7 @@ pub async fn player_info(
         PLAYER_INFO,
         FetchProfilePlayerInfo {
             region_id,
-            summoner_name: name.to_lowercase(),
+            summoner_name: name,
         },
         client,
         BASE_URL,
@@ -140,14 +140,14 @@ pub async fn fetch_match(
     name: Arc<String>,
     region_id: &'static str,
     id: String,
-    version: String,
+    version: Arc<String>,
     client: reqwest::Client,
 ) -> Result<structs::GetMatch, reqwest::Error> {
     request(
         FETCH_MATCH,
         FetchMatch {
             region_id,
-            summoner_name: name.to_string(),
+            summoner_name: name,
             match_id: id,
             version,
         },

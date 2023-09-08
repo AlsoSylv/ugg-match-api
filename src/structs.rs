@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 
@@ -53,7 +53,7 @@ pub struct MatchSummary {
     pub summoner_spells: Vec<i64>,
     pub team_a: Vec<Team>,
     pub team_b: Vec<Team>,
-    pub version: String,
+    pub version: Arc<String>,
     pub vision_score: i64,
     pub win: bool,
 }
@@ -288,8 +288,8 @@ pub struct FullMatchSummary {
     pub sub_style: i64,
     pub summoner_name: String,
     pub summoner_spells: Vec<i64>,
-    pub team_a: Vec<MatchTeam>,
-    pub team_b: Vec<MatchTeam>,
+    pub team_a: Box<[MatchTeam]>,
+    pub team_b: Box<[MatchTeam]>,
     pub version: String,
     pub vision_score: i64,
     pub win: bool,
@@ -308,7 +308,7 @@ pub struct PerformanceScore {
 pub struct MatchTeam {
     pub champion_id: i64,
     pub damage: i64,
-    pub role: i64,
+    pub role: u8,
     pub summoner_name: String,
     pub team_id: i64,
 }

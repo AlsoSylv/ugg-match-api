@@ -73,7 +73,8 @@ fn main() {
                             if let Some(info) = &info.data.profile_player_info {
                                 let res =
                                     get_icon(info.icon_id, &version[version_index], client.clone())
-                                        .await;
+                                        .await
+                                        .map(|bytes| (info.icon_id, bytes));
                                 let wrapped = Results::PlayerIcon(res.map_err(Errors::Request));
                                 thread_sender.send(wrapped).await.unwrap();
                             }
