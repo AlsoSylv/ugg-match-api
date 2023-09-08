@@ -174,8 +174,6 @@ impl MyEguiApp {
             .unwrap();
     }
 
-    /// This long line of function calls, well looking like bullshit
-    /// actually drives the entire state of the GUI to change!
     fn update_matches(&self, ctx: &egui::Context, name: Arc<String>, versions: Arc<[String]>) {
         self.send_message(
             ctx,
@@ -218,13 +216,7 @@ impl MyEguiApp {
                     ui.label(UGG_ROLES_REVERSED[summary.role as usize]);
                 });
                 ui.vertical(|ui| {
-                    let win;
-
-                    if summary.win {
-                        win = "Win";
-                    } else {
-                        win = "Loss";
-                    }
+                    let win = if summary.win { "Win" } else { "Loss" };
 
                     ui.label(win);
 
