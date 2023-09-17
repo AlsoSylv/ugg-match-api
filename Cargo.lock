@@ -311,6 +311,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73b5e5f48b927f04e952dedc932f31995a65a0bf65ec971c74436e51bf6e970d"
 
 [[package]]
+name = "atomicbox"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a9a3820bc9e9aaf60c8389c2a4808548599f4ff254ce6bdb608ac3631d4ad76"
+
+[[package]]
 name = "atspi"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2176,6 +2182,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "scc"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a3e0abe72a16dfacd5d644cd39c4d19f670f93774c3925b8485b796618a675f"
+
+[[package]]
 name = "schannel"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2647,11 +2659,13 @@ name = "ugg-match-api"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "atomicbox",
  "bytes",
  "chrono",
  "eframe",
  "png",
  "reqwest",
+ "scc",
  "serde",
  "tokio",
 ]

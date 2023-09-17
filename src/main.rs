@@ -1,7 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::sync::Arc;
+
 use bytes::Bytes;
-use ui::{Message, Results};
+use eframe::{egui::TextureOptions, epaint::ColorImage};
+use scc::HashMap;
+use structs::ChampionJson;
+use ui::{Champ, Message, Results};
 
 mod graphql;
 #[path = "networking/networking.rs"]
@@ -9,7 +14,32 @@ mod networking;
 mod structs;
 mod ui;
 
+pub struct SharedState {
+    // This is initilized once, and because of the way the GUI is setup, will always be there afterwards
+    champs: HashMap<i64, Champ>,
+}
+
+impl SharedState {
+    fn new() -> Self {
+        Self { champs: HashMap::with_capacity(200) }
+    }
+
+    async fn update_champ_image(
+        &self,
+        champ_id: i64,
+        texture: eframe::egui::TextureHandle,
+    ) {
+        self.champs
+            .update_async(&champ_id, |_, champ| {
+                champ.image = Some(texture);
+            })
+            .await;
+    }
+}
+
 fn main() {
+    let shared_state = Arc::new(SharedState::new());
+
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
         .enable_all()
@@ -24,6 +54,7 @@ fn main() {
         let thread_receiver = thread_receiver.clone();
         let thread_sender = thread_sender.clone();
         let client = client.clone();
+        let shared_state = shared_state.clone();
         async move {
             while let Ok(message) = thread_receiver.recv().await {
                 let ctx = message.ctx;
@@ -83,13 +114,11 @@ fn main() {
                         Results::PlayerInfo(val.map_err(Errors::Request))
                     }
                     ui::Payload::GetVersions => {
-                        println!("Help me");
                         let res = client
                             .get("https://ddragon.leagueoflegends.com/api/versions.json")
                             .send()
                             .await;
 
-                        println!("Request Finished!");
 
                         let res = match res {
                             Ok(val) => val.json().await,
@@ -101,22 +130,66 @@ fn main() {
                     ui::Payload::GetChampInfo { url } => {
                         let res = client.get(url).send().await;
 
-                        let res = match res {
-                            Ok(val) => val.json().await,
-                            Err(err) => Err(err),
+                        let res = if let Ok(res) = res {
+                            let json = res.json::<ChampionJson>().await;
+                            if let Ok(json) = json {
+                                for (_, data) in json.data {
+                                    let id: i64 = data.id.parse().unwrap();
+                                    shared_state
+                                        .champs
+                                        .insert_async(id, data.into())
+                                        .await
+                                        .unwrap();
+                                }
+
+                                None
+                            } else {
+                                Some(json.unwrap_err())
+                            }
+                        } else {
+                            Some(res.unwrap_err())
                         };
 
-                        Results::ChampJson(res.map_err(Errors::Request))
+                        Results::ChampJson(res.map(Errors::Request))
                     }
                     ui::Payload::GetChampImage { url, id } => {
                         let res = client.get(url).send().await;
+                        let res = if let Ok(res) = res {
+                            let bytes = res.bytes().await;
+                            if let Ok(bytes) = bytes {
+                                let mut decoder = png::Decoder::new(&*bytes);
+                                let headers = decoder
+                                    .read_header_info()
+                                    .map_err(|err| println!("{:?}", err))
+                                    .expect("This is always a PNG, so this shouldn't ever fail");
 
-                        let res = match res {
-                            Ok(val) => val.bytes().await.map(|bytes| (bytes, id)),
-                            Err(err) => Err(err),
+                                let x = headers.height as usize;
+                                let y = headers.width as usize;
+
+                                let mut reader = decoder.read_info().unwrap();
+                                let mut buf = vec![0; reader.output_buffer_size()];
+
+                                reader.next_frame(&mut buf).expect(
+                                    "If the champ does not exist in the map, something is wrong",
+                                );
+
+                                let texture = ctx.load_texture(
+                                    "icon",
+                                    ColorImage::from_rgb([x, y], &buf),
+                                    TextureOptions::LINEAR,
+                                );
+
+                                shared_state.update_champ_image(id, texture).await;
+
+                                None
+                            } else {
+                                Some(bytes.unwrap_err())
+                            }
+                        } else {
+                            Some(res.unwrap_err())
                         };
 
-                        Results::ChampImage(res.map_err(Errors::Request))
+                        Results::ChampImage(res.map(Errors::Request))
                     }
                     ui::Payload::GetMatchDetails { name, version, id } => {
                         let id_i64: i64 = id.as_str().parse().unwrap();
@@ -144,7 +217,14 @@ fn main() {
     let _ = eframe::run_native(
         "UGG API TEST",
         native_options,
-        Box::new(|cc| Box::new(ui::MyEguiApp::new(cc, gui_sender, gui_receiver))),
+        Box::new(|cc| {
+            Box::new(ui::MyEguiApp::new(
+                cc,
+                gui_sender,
+                gui_receiver,
+                shared_state,
+            ))
+        }),
     );
 }
 

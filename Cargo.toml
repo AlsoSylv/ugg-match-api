@@ -15,6 +15,8 @@ eframe = { version = "0.22.0", features = [] }
 bytes = "1.4.0"
 png = "0.17.9"
 async-channel = "1.9.0"
+atomicbox = "0.4.0"
+scc = "2.0.1"
 
 [profile.release]
 lto = true

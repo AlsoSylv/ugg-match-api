@@ -1,7 +1,5 @@
-use crate::structs::{
-    self, ChampData, ChampionJson, GetMatch, Match, MatchSummary, OverallRanking, RankScore,
-};
-use crate::Errors;
+use crate::structs::{self, ChampData, GetMatch, Match, MatchSummary, OverallRanking, RankScore};
+use crate::{Errors, SharedState};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use eframe::egui::{self, TextBuffer, TextureOptions, Ui, Vec2};
 use eframe::epaint::ColorImage;
@@ -21,8 +19,8 @@ pub enum Results {
     PlayerInfo(Result<structs::PlayerInfo, Errors>),
     PlayerIcon(Result<(i64, bytes::Bytes), Errors>),
     Versions(Result<Arc<[String]>, Errors>),
-    ChampJson(Result<ChampionJson, Errors>),
-    ChampImage(Result<(bytes::Bytes, i64), Errors>),
+    ChampJson(Option<Errors>),
+    ChampImage(Option<Errors>),
     MatchDetails(Box<Result<(GetMatch, i64), Errors>>),
 }
 
@@ -70,6 +68,7 @@ pub enum Payload {
 pub struct MyEguiApp {
     messenger: async_channel::Sender<Message>,
     receiver: async_channel::Receiver<Results>,
+    shared_state: Arc<SharedState>,
 
     active_player: String,
     message_name: Arc<String>,
@@ -80,7 +79,6 @@ pub struct MyEguiApp {
     data_dragon: DataDragon,
     refresh_enabled: bool,
     update_enabled: bool,
-    id_name_champ_map: OnceCell<HashMap<i64, Champ>>,
     match_summeries: Option<HashMap<i64, Option<Match>>>,
     player_icons: HashMap<i64, Option<egui::TextureHandle>>,
     icon_id: i64,
@@ -94,8 +92,8 @@ struct DataDragon {
 pub struct Champ {
     pub key: String,
     pub name: String,
-    image: Option<egui::TextureHandle>,
-    image_started: AtomicBool,
+    pub image: Option<egui::TextureHandle>,
+    pub image_started: AtomicBool,
 }
 
 impl Debug for Champ {
@@ -108,11 +106,11 @@ impl Debug for Champ {
     }
 }
 
-impl ChampData {
-    fn into(self) -> Champ {
+impl From<ChampData> for Champ {
+    fn from(val: ChampData) -> Champ {
         Champ {
-            key: self.key,
-            name: self.name,
+            key: val.key,
+            name: val.name,
             image: None,
             image_started: AtomicBool::new(false),
         }
@@ -140,10 +138,12 @@ impl MyEguiApp {
         _cc: &eframe::CreationContext<'_>,
         sender: async_channel::Sender<Message>,
         receiver: async_channel::Receiver<Results>,
+        shared_state: Arc<SharedState>,
     ) -> Self {
         Self {
             active_player: Default::default(),
             message_name: Default::default(),
+            shared_state,
             role: 5,
             summeries: None,
             rank: None,
@@ -156,7 +156,6 @@ impl MyEguiApp {
                 ver_started: false,
                 // champ_json: None,
             },
-            id_name_champ_map: Default::default(),
             messenger: sender,
             receiver,
             match_summeries: None,
@@ -284,33 +283,7 @@ impl MyEguiApp {
         }
     }
 
-    fn load_champ_json(&mut self, ctx: &egui::Context) {
-        if let Ok(Results::ChampJson(json)) = self.receiver.try_recv() {
-            match json {
-                Ok(json) => {
-                    self.id_name_champ_map.get_or_init(|| {
-                        let mut id_name_champ_map = HashMap::with_capacity(json.data.len());
-                        for (_, data) in json.data {
-                            let id: i64 = data.id.parse().unwrap();
-                            id_name_champ_map.insert(id, data.into());
-                        }
-
-                        id_name_champ_map
-                    });
-                }
-                Err(err) => {
-                    egui::Window::new("Champ Json Error").show(ctx, |ui| ui.label(err.to_string()));
-                }
-            }
-        }
-    }
-
-    fn update_data(
-        &mut self,
-        ctx: &egui::Context,
-        versions: Arc<[String]>,
-        id_name_champ_map: &mut HashMap<i64, Champ>,
-    ) {
+    fn update_data(&mut self, ctx: &egui::Context, versions: Arc<[String]>) {
         if let Ok(receiver) = self.receiver.try_recv() {
             match receiver {
                 Results::MatchSum(match_sums) => match match_sums {
@@ -324,22 +297,22 @@ impl MyEguiApp {
                                     self.send_message(ctx, Payload::GetMatchDetails { name: self.message_name.clone(), version: summary.version.clone(), id: summary.match_id.to_string() });
                                 }
                             }
-                            let champ = &id_name_champ_map[&summary.champion_id];
-
-                            if !champ.image_started.load(std::sync::atomic::Ordering::Relaxed) {
-                                let key = &champ.key;
-                                self.send_message(
-                                    ctx,
-                                    Payload::GetChampImage {
-                                        url: format!(
-                                            "http://ddragon.leagueoflegends.com/cdn/{}/img/champion/{}.png",
-                                            versions[0], key
-                                        ),
-                                        id: summary.champion_id,
-                                    },
-                                );
-                                champ.image_started.store(true, std::sync::atomic::Ordering::Relaxed);
-                            }
+                            self.shared_state.champs.read(&summary.champion_id, |_, champ| {
+                                if !champ.image_started.load(std::sync::atomic::Ordering::Relaxed) {
+                                    let key = &champ.key;
+                                    self.send_message(
+                                        ctx,
+                                        Payload::GetChampImage {
+                                            url: format!(
+                                                "http://ddragon.leagueoflegends.com/cdn/{}/img/champion/{}.png",
+                                                versions[0], key
+                                            ),
+                                            id: summary.champion_id,
+                                        },
+                                    );
+                                    champ.image_started.store(true, std::sync::atomic::Ordering::Relaxed);
+                                }
+                            });
                         });
                         self.summeries = Some(summaries)
                     }
@@ -425,38 +398,11 @@ impl MyEguiApp {
                         dbg!("{:?}", err);
                     }
                 },
-                Results::ChampImage(image) => match image {
-                    Ok((image, id)) => {
-                        let mut decoder = png::Decoder::new(&*image);
-                        let headers = decoder
-                            .read_header_info()
-                            .map_err(|err| println!("{:?}", err))
-                            .expect("This is always a PNG, so this shouldn't ever fail");
-
-                        let x = headers.height as usize;
-                        let y = headers.width as usize;
-
-                        let mut reader = decoder.read_info().unwrap();
-                        let mut buf = vec![0; reader.output_buffer_size()];
-
-                        reader.next_frame(&mut buf).expect(
-                            "If the champ does not exist in the map, something is deeply wrong",
-                        );
-
-                        let texture = ctx.load_texture(
-                            "icon",
-                            ColorImage::from_rgb([x, y], &buf),
-                            TextureOptions::LINEAR,
-                        );
-
-                        let handle = id_name_champ_map.get_mut(&id).unwrap();
-
-                        handle.image = Some(texture);
+                Results::ChampImage(image_errors) => {
+                    if let Some(err) = image_errors {
+                        todo!("{:?}", err)
                     }
-                    Err(err) => {
-                        dbg!("{:?}", err);
-                    }
-                },
+                }
                 Results::MatchDetails(deets) => match *deets {
                     Ok((match_details, id)) => {
                         self.match_summeries
@@ -469,6 +415,12 @@ impl MyEguiApp {
                     }
                 },
 
+                Results::ChampJson(errors) => {
+                    if let Some(err) = errors {
+                        todo!("{:?}", err)
+                    }
+                }
+
                 payload => unreachable!(
                     "App has reached an impossible state, this should already be covered {:?}",
                     payload
@@ -478,8 +430,8 @@ impl MyEguiApp {
     }
 
     fn zero_player(&mut self) {
+        self.icon_id = -1;
         self.summeries = None;
-        // self.player_icon = None;
         self.rank = None;
         self.ranking = None;
     }
@@ -506,16 +458,15 @@ impl eframe::App for MyEguiApp {
 
         let versions = versions.clone();
 
-        let Some(mut id_name_champ_map) = self.id_name_champ_map.take() else {
+        if self.shared_state.champs.is_empty() {
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.spinner();
             });
 
-            self.load_champ_json(ctx);
             return;
         };
 
-        self.update_data(ctx, versions.clone(), &mut id_name_champ_map);
+        self.update_data(ctx, versions.clone());
 
         let side_panel_ui = |ui: &mut Ui| {
             ui.add_space(5.0);
@@ -635,7 +586,9 @@ impl eframe::App for MyEguiApp {
                                 ui.label("No Data");
                             } else {
                                 for summary in sums {
-                                    let champ = &id_name_champ_map[&summary.champion_id];
+                                    let entry =
+                                        self.shared_state.champs.get(&summary.champion_id).unwrap();
+                                    let champ = entry.get();
                                     self.match_page(summary, ui, ctx, champ);
                                     ui.separator();
                                 }
@@ -644,8 +597,6 @@ impl eframe::App for MyEguiApp {
                 }
             });
         });
-
-        self.id_name_champ_map.set(id_name_champ_map).unwrap();
     }
 }
 
