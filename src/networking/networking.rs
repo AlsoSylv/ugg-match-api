@@ -21,7 +21,7 @@ pub async fn fetch_match_summaries(
     region_id: &'static str,
     role: Vec<u8>,
     page: i64,
-    client: reqwest::Client,
+    client: &reqwest::Client,
 ) -> Result<structs::PlayerMatchSummeries, reqwest::Error> {
     request(
         MATCH_SUMMERIES,
@@ -63,12 +63,13 @@ const UPDATE_PLAYER: &str = include_str!("../graphql/update_profile_query.graphq
 
 pub async fn update_player(
     name: Arc<String>,
-    client: reqwest::Client,
+    client: &reqwest::Client,
+    region_id: &'static str,
 ) -> Result<structs::UpdatePlayer, reqwest::Error> {
     request(
         UPDATE_PLAYER,
         UpdatePlayerProfile {
-            region_id: "na1",
+            region_id,
             summoner_name: name,
         },
         client,
@@ -81,12 +82,13 @@ const PROFILE_RANKS: &str = include_str!("../graphql/fetch_profile_rank_queries.
 
 pub async fn profile_ranks(
     name: Arc<String>,
-    client: reqwest::Client,
+    client: &reqwest::Client,
+    region_id: &'static str,
 ) -> Result<structs::PlayerRank, reqwest::Error> {
     request(
         PROFILE_RANKS,
         FetchProfileRanks {
-            region_id: "na1",
+            region_id,
             summoner_name: name,
             season_id: SEASON_ID,
         },
@@ -100,12 +102,13 @@ const PLAYER_RANKING: &str = include_str!("../graphql/overall_player_ranking.gra
 
 pub async fn player_ranking(
     name: Arc<String>,
-    client: reqwest::Client,
+    client: &reqwest::Client,
+    region_id: &'static str,
 ) -> Result<structs::PlayerRanking, reqwest::Error> {
     request(
         PLAYER_RANKING,
         GetOverallPlayerRanking {
-            region_id: "na1",
+            region_id,
             summoner_name: name,
             queue_type: 420,
         },
@@ -120,7 +123,7 @@ const PLAYER_INFO: &str = include_str!("../graphql/profile_player_info.graphql")
 pub async fn player_info(
     name: Arc<String>,
     region_id: &'static str,
-    client: reqwest::Client,
+    client: &reqwest::Client,
 ) -> Result<structs::PlayerInfo, reqwest::Error> {
     request(
         PLAYER_INFO,
@@ -141,7 +144,7 @@ pub async fn fetch_match(
     region_id: &'static str,
     id: String,
     version: Arc<String>,
-    client: reqwest::Client,
+    client: &reqwest::Client,
 ) -> Result<structs::GetMatch, reqwest::Error> {
     request(
         FETCH_MATCH,
@@ -160,7 +163,7 @@ pub async fn fetch_match(
 async fn request<Vars: Serialize, Data: for<'de> Deserialize<'de>>(
     query: &str,
     variables: Vars,
-    client: reqwest::Client,
+    client: &reqwest::Client,
     url: &str,
 ) -> Result<Data, reqwest::Error> {
     client

@@ -183,7 +183,6 @@ pub struct ProfilePlayerInfo {
 pub struct ProfileInfo {
     pub icon_id: i64,
     pub summoner_level: i64,
-    pub summoner_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

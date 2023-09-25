@@ -1,12 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock, RwLock};
 
+use async_channel::{Receiver, Sender};
 use bytes::Bytes;
-use eframe::{egui::TextureOptions, epaint::ColorImage};
-use scc::HashMap;
+use eframe::{
+    egui::TextureOptions,
+    epaint::{ColorImage, TextureHandle},
+};
+use std::collections::HashMap;
 use structs::ChampionJson;
-use ui::{Champ, Message, Results};
+use tokio::runtime::Runtime;
+use ui::{Champ, Results, Payload};
 
 mod graphql;
 #[path = "networking/networking.rs"]
@@ -16,28 +21,55 @@ mod ui;
 
 pub struct SharedState {
     // This is initilized once, and because of the way the GUI is setup, will always be there afterwards
-    champs: HashMap<i64, Champ>,
+    champs: OnceLock<Arc<HashMap<i64, Champ>>>,
+    versions: OnceLock<Arc<[String]>>,
+    player_icons: Arc<RwLock<HashMap<i64, TextureHandle>>>,
 }
 
 impl SharedState {
     fn new() -> Self {
-        Self { champs: HashMap::with_capacity(200) }
+        Self {
+            champs: OnceLock::new(),
+            versions: OnceLock::new(),
+            player_icons: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
-    async fn update_champ_image(
-        &self,
-        champ_id: i64,
-        texture: eframe::egui::TextureHandle,
-    ) {
-        self.champs
-            .update_async(&champ_id, |_, champ| {
-                champ.image = Some(texture);
-            })
-            .await;
+    async fn update_champ_image(&self, champ_id: i64, texture: eframe::egui::TextureHandle) {
+        let map = self.champs.get().unwrap();
+        let handle = map
+            .get(&champ_id)
+            .expect("The map is already loaded by now");
+        let mut write = handle.image.write().unwrap();
+        *write = Some(texture);
     }
 }
 
-fn main() {
+#[derive(Clone)]
+struct ThreadState {
+    ctx: eframe::egui::Context,
+    receiver: Receiver<Payload>,
+    sender: Sender<Results>,
+    client: reqwest::Client,
+}
+
+async fn message_sender(
+    message: Results,
+    ctx: &eframe::egui::Context,
+    thread_sender: &Sender<Results>,
+) {
+    thread_sender.send(message).await.unwrap();
+    ctx.request_repaint();
+}
+
+pub fn spawn_gui_shit(
+    _ctx: &eframe::egui::Context,
+) -> (
+    Runtime,
+    Sender<Payload>,
+    Receiver<Results>,
+    Arc<SharedState>,
+) {
     let shared_state = Arc::new(SharedState::new());
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -46,164 +78,249 @@ fn main() {
         .build()
         .unwrap();
 
-    let (gui_sender, thread_receiver) = async_channel::unbounded::<Message>();
+    let (gui_sender, thread_receiver) = async_channel::unbounded::<Payload>();
     let (thread_sender, gui_receiver) = async_channel::unbounded();
     let client = reqwest::Client::new();
 
+    let state = ThreadState {
+        ctx: _ctx.clone(),
+        receiver: thread_receiver,
+        sender: thread_sender,
+        client,
+    };
+
     let runtime_loop = || {
-        let thread_receiver = thread_receiver.clone();
-        let thread_sender = thread_sender.clone();
-        let client = client.clone();
+        let state = state.clone();
         let shared_state = shared_state.clone();
+
         async move {
-            while let Ok(message) = thread_receiver.recv().await {
-                let ctx = message.ctx;
-                let message = match message.payload {
-                    ui::Payload::MatchSummaries { name, roles } => {
+            while let Ok(message) = state.receiver.recv().await {
+                match message {
+                    ui::Payload::MatchSummaries {
+                        name,
+                        roles,
+                        region_id,
+                    } => {
                         let request = networking::fetch_match_summaries(
                             name,
-                            "na1",
+                            region_id,
                             roles,
                             1,
-                            client.clone(),
+                            &state.client,
                         )
                         .await
                         .map_err(Errors::Request);
 
-                        Results::MatchSum(request)
+                        message_sender(Results::MatchSum(request), &state.ctx, &state.sender).await;
                     }
-                    ui::Payload::PlayerRanks { name } => {
-                        let request = networking::profile_ranks(name, client.clone())
+                    ui::Payload::PlayerRanks { name, region_id } => {
+                        let request = networking::profile_ranks(name, &state.client, region_id)
                             .await
                             .map_err(Errors::Request);
 
-                        Results::ProfileRanks(request)
+                        message_sender(Results::ProfileRanks(request), &state.ctx, &state.sender)
+                            .await;
                     }
-                    ui::Payload::UpdatePlayer { name } => {
-                        let request = networking::update_player(name, client.clone())
+                    ui::Payload::UpdatePlayer { name, region_id } => {
+                        let request = networking::update_player(name, &state.client, region_id)
                             .await
                             .map_err(Errors::Request);
 
-                        Results::PlayerUpdate(request)
+                        message_sender(Results::PlayerUpdate(request), &state.ctx, &state.sender)
+                            .await;
                     }
-                    ui::Payload::PlayerRanking { name } => {
-                        let request = networking::player_ranking(name, client.clone())
+                    ui::Payload::PlayerRanking { name, region_id } => {
+                        let request = networking::player_ranking(name, &state.client, region_id)
                             .await
                             .map_err(Errors::Request);
 
-                        Results::Ranking(request)
+                        message_sender(Results::Ranking(request), &state.ctx, &state.sender).await;
                     }
                     ui::Payload::PlayerInfo {
                         name,
                         version,
                         version_index,
+                        region_id,
                     } => {
-                        let val = networking::player_info(name, "na1", client.clone()).await;
+                        let val = networking::player_info(name, region_id, &state.client).await;
 
                         if let Ok(info) = &val {
                             if let Some(info) = &info.data.profile_player_info {
                                 let res =
-                                    get_icon(info.icon_id, &version[version_index], client.clone())
-                                        .await
-                                        .map(|bytes| (info.icon_id, bytes));
-                                let wrapped = Results::PlayerIcon(res.map_err(Errors::Request));
-                                thread_sender.send(wrapped).await.unwrap();
+                                    get_icon(info.icon_id, &version[version_index], &state.client)
+                                        .await;
+                                match res {
+                                    Ok(bytes) => {
+                                        let mut decoder = png::Decoder::new(&*bytes);
+                                        let headers = decoder.read_header_info().expect(
+                                            "This is always a PNG, so this shouldn't ever fail",
+                                        );
+
+                                        let x = headers.height as usize;
+                                        let y = headers.width as usize;
+
+                                        let mut reader = decoder.read_info().unwrap();
+
+                                        let mut buf = vec![0; reader.output_buffer_size()];
+
+                                        reader.next_frame(&mut buf).unwrap();
+
+                                        let texture = state.ctx.load_texture(
+                                            "icon",
+                                            ColorImage::from_rgb([x, y], &buf),
+                                            TextureOptions::LINEAR,
+                                        );
+                                        let _ = shared_state
+                                            .player_icons
+                                            .write()
+                                            .unwrap()
+                                            .insert(info.icon_id, texture);
+                                    }
+                                    Err(err) => {
+                                        let wrapped = Results::PlayerIcon(Errors::Request(err));
+                                        message_sender(wrapped, &state.ctx, &state.sender).await;
+                                    }
+                                }
                             }
                         }
 
-                        Results::PlayerInfo(val.map_err(Errors::Request))
+                        message_sender(
+                            Results::PlayerInfo(val.map_err(Errors::Request)),
+                            &state.ctx,
+                            &state.sender,
+                        )
+                        .await;
                     }
                     ui::Payload::GetVersions => {
-                        let res = client
+                        let res = state
+                            .client
                             .get("https://ddragon.leagueoflegends.com/api/versions.json")
                             .send()
                             .await;
-
 
                         let res = match res {
                             Ok(val) => val.json().await,
                             Err(err) => Err(err),
                         };
 
-                        Results::Versions(res.map_err(Errors::Request))
+                        match res {
+                            Ok(json) => {
+                                shared_state.versions.get_or_init(|| json);
+                                
+                            },
+                            Err(err) => {
+                                message_sender(
+                                    Results::Versions(Errors::Request(err)),
+                                    &state.ctx,
+                                    &state.sender,
+                                )
+                                .await;
+                            },
+                        };
                     }
                     ui::Payload::GetChampInfo { url } => {
-                        let res = client.get(url).send().await;
+                        let res = state.client.get(url).send().await;
 
-                        let res = if let Ok(res) = res {
-                            let json = res.json::<ChampionJson>().await;
-                            if let Ok(json) = json {
-                                for (_, data) in json.data {
-                                    let id: i64 = data.id.parse().unwrap();
-                                    shared_state
-                                        .champs
-                                        .insert_async(id, data.into())
-                                        .await
-                                        .unwrap();
-                                }
-
-                                None
-                            } else {
-                                Some(json.unwrap_err())
+                        let res = match res {
+                            Ok(res) => res,
+                            Err(err) => {
+                                message_sender(
+                                    Results::ChampJson(Errors::Request(err)),
+                                    &state.ctx,
+                                    &state.sender,
+                                )
+                                .await;
+                                continue;
                             }
-                        } else {
-                            Some(res.unwrap_err())
                         };
 
-                        Results::ChampJson(res.map(Errors::Request))
+                        let json = res.json::<ChampionJson>().await;
+                        let json = match json {
+                            Ok(json) => json,
+                            Err(err) => {
+                                message_sender(
+                                    Results::ChampJson(Errors::Request(err)),
+                                    &state.ctx,
+                                    &state.sender,
+                                )
+                                .await;
+                                continue;
+                            }
+                        };
+
+                        let mut champs: HashMap<i64, Champ> = HashMap::with_capacity(200);
+                        for (_, data) in json.data {
+                            let id: i64 = data.id.parse().unwrap();
+                            champs.insert(id, data.into());
+                        }
+                        shared_state.champs.get_or_init(|| Arc::new(champs));
                     }
                     ui::Payload::GetChampImage { url, id } => {
-                        let res = client.get(url).send().await;
-                        let res = if let Ok(res) = res {
-                            let bytes = res.bytes().await;
-                            if let Ok(bytes) = bytes {
-                                let mut decoder = png::Decoder::new(&*bytes);
-                                let headers = decoder
-                                    .read_header_info()
-                                    .map_err(|err| println!("{:?}", err))
-                                    .expect("This is always a PNG, so this shouldn't ever fail");
-
-                                let x = headers.height as usize;
-                                let y = headers.width as usize;
-
-                                let mut reader = decoder.read_info().unwrap();
-                                let mut buf = vec![0; reader.output_buffer_size()];
-
-                                reader.next_frame(&mut buf).expect(
-                                    "If the champ does not exist in the map, something is wrong",
-                                );
-
-                                let texture = ctx.load_texture(
-                                    "icon",
-                                    ColorImage::from_rgb([x, y], &buf),
-                                    TextureOptions::LINEAR,
-                                );
-
-                                shared_state.update_champ_image(id, texture).await;
-
-                                None
-                            } else {
-                                Some(bytes.unwrap_err())
+                        let res = state.client.get(url).send().await;
+                        let res = match res {
+                            Ok(res) => res,
+                            Err(err) => {
+                                message_sender(
+                                    Results::ChampImage(Errors::Request(err)),
+                                    &state.ctx,
+                                    &state.sender,
+                                )
+                                .await;
+                                continue;
                             }
-                        } else {
-                            Some(res.unwrap_err())
+                        };
+                        let bytes = &*match res.bytes().await {
+                            Ok(bytes) => bytes,
+                            Err(err) => {
+                                message_sender(
+                                    Results::ChampImage(Errors::Request(err)),
+                                    &state.ctx,
+                                    &state.sender,
+                                )
+                                .await;
+                                continue;
+                            }
                         };
 
-                        Results::ChampImage(res.map(Errors::Request))
-                    }
-                    ui::Payload::GetMatchDetails { name, version, id } => {
-                        let id_i64: i64 = id.as_str().parse().unwrap();
-                        let res = networking::fetch_match(name, "na1", id, version, client.clone())
-                            .await
-                            .map(|json| (json, id_i64))
-                            .map_err(Errors::Request);
+                        let mut decoder = png::Decoder::new(bytes);
+                        let headers = decoder
+                            .read_header_info()
+                            .map_err(|err| println!("{:?}", err))
+                            .expect("This is always a PNG, so this shouldn't ever fail");
 
-                        Results::MatchDetails(Box::new(res))
+                        let x = headers.height as usize;
+                        let y = headers.width as usize;
+
+                        let mut reader = decoder.read_info().unwrap();
+                        let mut buf = vec![0; reader.output_buffer_size()];
+
+                        reader
+                            .next_frame(&mut buf)
+                            .expect("If the champ does not exist in the map, something is wrong");
+
+                        let texture = state.ctx.load_texture(
+                            "icon",
+                            ColorImage::from_rgb([x, y], &buf),
+                            TextureOptions::LINEAR,
+                        );
+
+                        shared_state.update_champ_image(id, texture).await;
+                    }
+                    ui::Payload::GetMatchDetails {
+                        name,
+                        version,
+                        id,
+                        region_id,
+                    } => {
+                        let id_i64: i64 = id.as_str().parse().unwrap();
+                        let res =
+                            networking::fetch_match(name, region_id, id, version, &state.client)
+                                .await
+                                .map(|json| (Box::new(json), id_i64))
+                                .map_err(Errors::Request);
+                        message_sender(Results::MatchDetails(res), &state.ctx, &state.sender).await;
                     }
                 };
-
-                thread_sender.send(message).await.unwrap();
-                ctx.request_repaint();
             }
         }
     };
@@ -213,18 +330,15 @@ fn main() {
     runtime.spawn(runtime_loop());
     runtime.spawn(runtime_loop());
 
+    (runtime, gui_sender, gui_receiver, shared_state.clone())
+}
+
+fn main() {
     let native_options = eframe::NativeOptions::default();
     let _ = eframe::run_native(
         "UGG API TEST",
         native_options,
-        Box::new(|cc| {
-            Box::new(ui::MyEguiApp::new(
-                cc,
-                gui_sender,
-                gui_receiver,
-                shared_state,
-            ))
-        }),
+        Box::new(|cc| Box::new(ui::MyEguiApp::new(cc))),
     );
 }
 
@@ -236,7 +350,7 @@ fn main() {
 //     client: reqwest::Client,
 // ) {
 //     tokio::spawn(async move {
-//         let request = networking::player_suggestiosn(name, &client).await;
+//         let request = networking::player_suggestiosn(name, &state.client).await;
 //         match request {
 //             Ok(response) => {
 //                 // let _ = tx.send(Results::PlayerSuggestions(Ok(response)));
@@ -253,7 +367,7 @@ fn main() {
 async fn get_icon(
     id: i64,
     version: &str,
-    client: reqwest::Client,
+    client: &reqwest::Client,
 ) -> Result<Bytes, reqwest::Error> {
     let res = client
         .get(format!(
