@@ -27,6 +27,7 @@ pub enum Payload {
     MatchSummaries {
         name: Arc<String>,
         roles: Vec<u8>,
+        page: u8,
         region_id: &'static str,
     },
     PlayerRanks {
@@ -43,7 +44,6 @@ pub enum Payload {
     },
     PlayerInfo {
         name: Arc<String>,
-        version: Arc<[String]>,
         version_index: usize,
         region_id: &'static str,
     },
@@ -87,6 +87,8 @@ pub struct MyEguiApp {
     summeries: Option<Vec<MatchSummary>>,
     rank: Option<Vec<RankScore>>,
     ranking: Option<OverallRanking>,
+    page: u8,
+    max_page: u8,
 
     // Runtime so the threads don't close
     _rt: Runtime,
@@ -177,6 +179,8 @@ impl MyEguiApp {
             receiver,
             match_summeries: Default::default(),
             icon_id: -1,
+            page: 1,
+            max_page: 0,
             _rt,
         }
     }
@@ -185,11 +189,12 @@ impl MyEguiApp {
         self.messenger.try_send(payload).unwrap();
     }
 
-    fn update_matches(&self, name: Arc<String>, versions: Arc<[String]>) {
+    fn update_matches(&self, name: Arc<String>) {
         self.send_message(Payload::MatchSummaries {
             name: name.clone(),
             roles: get_role_index(self.role).map_or_else(Vec::new, |role| vec![role]),
             region_id: self.data_dragon.region,
+            page: self.page,
         });
         self.send_message(Payload::PlayerRanks {
             name: name.clone(),
@@ -201,7 +206,6 @@ impl MyEguiApp {
         });
         self.send_message(Payload::PlayerInfo {
             name: name.clone(),
-            version: versions,
             version_index: 0,
             region_id: self.data_dragon.region,
         });
@@ -298,7 +302,9 @@ impl MyEguiApp {
             match receiver {
                 Results::MatchSum(match_sums) => match match_sums {
                     Ok(matches) => {
-                        let summaries = matches.data.fetch_player_match_summaries.match_summaries;
+                        let data = matches.data.fetch_player_match_summaries;
+                        self.max_page = data.total_num_matches as u8;
+                        let summaries = data.match_summaries;
                         summaries.iter().for_each(|summary| {
                             if self.match_summeries.get(&summary.match_id).is_none() {
                                 self.match_summeries.insert(summary.match_id, MatchFuture { _match: None });
@@ -330,7 +336,7 @@ impl MyEguiApp {
                     Ok(updated) => {
                         let data = updated.data.update_player_profile;
                         if data.success {
-                            self.update_matches(self.message_name.clone(), versions.clone());
+                            self.update_matches(self.message_name.clone());
                         } else {
                             dbg!("{:?}", data.error_reason);
                         }
@@ -371,7 +377,10 @@ impl MyEguiApp {
                 // Todo: Display this info
                 Results::PlayerInfo(info) => match info {
                     Ok(info) => {
-                        self.icon_id = info.data.profile_player_info.unwrap().icon_id;
+                        let info = info.data.profile_player_info.unwrap();
+                        if info.summoner_name.as_ref() == self.message_name.as_str() {
+                            self.icon_id = info.icon_id;
+                        }
                     }
                     Err(err) => {
                         dbg!("{:?}", err);
@@ -414,6 +423,8 @@ impl MyEguiApp {
         self.summeries = None;
         self.rank = None;
         self.ranking = None;
+        self.page = 1;
+        self.max_page = 0;
     }
 }
 
@@ -440,7 +451,12 @@ impl eframe::App for MyEguiApp {
 
         let Some(champs) = self.shared_state.champs.get() else {
             if !self.data_dragon.champ_info_started {
-                self.send_message(Payload::GetChampInfo { url: format!("http://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json", versions[0]) });
+                self.send_message(Payload::GetChampInfo {
+                    url: format!(
+                        "http://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json",
+                        versions[0]
+                    ),
+                });
                 self.data_dragon.champ_info_started = true;
             }
 
@@ -466,7 +482,7 @@ impl eframe::App for MyEguiApp {
                 if search_bar.clicked() && !self.active_player.is_empty() {
                     if !self.active_player.is_empty() {
                         self.message_name = Arc::new(self.active_player.clone());
-                        self.update_matches(self.message_name.clone(), versions.clone());
+                        self.update_matches(self.message_name.clone());
                     } else {
                         self.zero_player();
                     }
@@ -510,11 +526,27 @@ impl eframe::App for MyEguiApp {
                     });
             });
 
+            ui.horizontal(|ui| {
+                let button = egui::Button::new("⬅");
+                if ui.add_enabled(self.page > 1, button).clicked() {
+                    self.page -= 1;
+                    self.update_matches(self.message_name.clone())
+                }
+
+                ui.label(self.page.to_string());
+
+                let button = egui::Button::new("➡");
+                if ui.add_enabled(self.max_page == 20, button).clicked() {
+                    self.page += 1;
+                    self.update_matches(self.message_name.clone())
+                }
+            });
+
             ui.add_space(5.0);
 
             let button = egui::Button::new("Refresh Player");
             if ui.add_enabled(self.refresh_enabled, button).clicked() {
-                self.update_matches(self.message_name.clone(), versions.clone());
+                self.update_matches(self.message_name.clone());
             }
 
             ui.add_space(5.0);

@@ -11,13 +11,24 @@ use eframe::{
 use std::collections::HashMap;
 use structs::ChampionJson;
 use tokio::runtime::Runtime;
-use ui::{Champ, Results, Payload};
+use ui::{Champ, Payload, Results};
 
 mod graphql;
 #[path = "networking/networking.rs"]
 mod networking;
 mod structs;
 mod ui;
+
+fn main() {
+    println!("{}", std::mem::size_of::<Results>());
+
+    let native_options = eframe::NativeOptions::default();
+    let _ = eframe::run_native(
+        "UGG API TEST",
+        native_options,
+        Box::new(|cc| Box::new(ui::MyEguiApp::new(cc))),
+    );
+}
 
 pub struct SharedState {
     // This is initilized once, and because of the way the GUI is setup, will always be there afterwards
@@ -100,12 +111,13 @@ pub fn spawn_gui_shit(
                         name,
                         roles,
                         region_id,
+                        page,
                     } => {
                         let request = networking::fetch_match_summaries(
                             name,
                             region_id,
                             roles,
-                            1,
+                            page as i64,
                             &state.client,
                         )
                         .await
@@ -138,7 +150,6 @@ pub fn spawn_gui_shit(
                     }
                     ui::Payload::PlayerInfo {
                         name,
-                        version,
                         version_index,
                         region_id,
                     } => {
@@ -146,9 +157,12 @@ pub fn spawn_gui_shit(
 
                         if let Ok(info) = &val {
                             if let Some(info) = &info.data.profile_player_info {
-                                let res =
-                                    get_icon(info.icon_id, &version[version_index], &state.client)
-                                        .await;
+                                let res = get_icon(
+                                    info.icon_id,
+                                    &shared_state.versions.get().unwrap()[version_index],
+                                    &state.client,
+                                )
+                                .await;
                                 match res {
                                     Ok(bytes) => {
                                         let mut decoder = png::Decoder::new(&*bytes);
@@ -206,8 +220,7 @@ pub fn spawn_gui_shit(
                         match res {
                             Ok(json) => {
                                 shared_state.versions.get_or_init(|| json);
-                                
-                            },
+                            }
                             Err(err) => {
                                 message_sender(
                                     Results::Versions(Errors::Request(err)),
@@ -215,7 +228,7 @@ pub fn spawn_gui_shit(
                                     &state.sender,
                                 )
                                 .await;
-                            },
+                            }
                         };
                     }
                     ui::Payload::GetChampInfo { url } => {
@@ -308,16 +321,21 @@ pub fn spawn_gui_shit(
                     }
                     ui::Payload::GetMatchDetails {
                         name,
-                        version,
                         id,
                         region_id,
+                        version,
                     } => {
                         let id_i64: i64 = id.as_str().parse().unwrap();
-                        let res =
-                            networking::fetch_match(name, region_id, id, version, &state.client)
-                                .await
-                                .map(|json| (Box::new(json), id_i64))
-                                .map_err(Errors::Request);
+                        let res = networking::fetch_match(
+                            name,
+                            region_id,
+                            id,
+                            &version,
+                            &state.client,
+                        )
+                        .await
+                        .map(|json| (Box::new(json), id_i64))
+                        .map_err(Errors::Request);
                         message_sender(Results::MatchDetails(res), &state.ctx, &state.sender).await;
                     }
                 };
@@ -331,15 +349,6 @@ pub fn spawn_gui_shit(
     runtime.spawn(runtime_loop());
 
     (runtime, gui_sender, gui_receiver, shared_state.clone())
-}
-
-fn main() {
-    let native_options = eframe::NativeOptions::default();
-    let _ = eframe::run_native(
-        "UGG API TEST",
-        native_options,
-        Box::new(|cc| Box::new(ui::MyEguiApp::new(cc))),
-    );
 }
 
 // Note: This is unsused because the searchbar is broken, but I'm hoping it gets fixed one day

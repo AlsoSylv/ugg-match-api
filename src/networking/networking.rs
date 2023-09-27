@@ -143,7 +143,7 @@ pub async fn fetch_match(
     name: Arc<String>,
     region_id: &'static str,
     id: String,
-    version: Arc<String>,
+    version: &str,
     client: &reqwest::Client,
 ) -> Result<structs::GetMatch, reqwest::Error> {
     request(
