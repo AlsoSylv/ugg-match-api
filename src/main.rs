@@ -20,8 +20,6 @@ mod structs;
 mod ui;
 
 fn main() {
-    println!("{}", std::mem::size_of::<Results>());
-
     let native_options = eframe::NativeOptions::default();
     let _ = eframe::run_native(
         "UGG API TEST",
@@ -34,7 +32,7 @@ pub struct SharedState {
     // This is initilized once, and because of the way the GUI is setup, will always be there afterwards
     champs: OnceLock<Arc<HashMap<i64, Champ>>>,
     versions: OnceLock<Arc<[String]>>,
-    player_icons: Arc<RwLock<HashMap<i64, TextureHandle>>>,
+    player_icons: Arc<RwLock<HashMap<i16, TextureHandle>>>,
 }
 
 impl SharedState {
@@ -116,7 +114,7 @@ pub fn spawn_gui_shit(
                         let request = networking::fetch_match_summaries(
                             name,
                             region_id,
-                            roles,
+                            roles.map_or_else(Vec::new, |role| vec![role]),
                             page as i64,
                             &state.client,
                         )
@@ -325,16 +323,15 @@ pub fn spawn_gui_shit(
                         region_id,
                         version,
                     } => {
-                        let id_i64: i64 = id.as_str().parse().unwrap();
                         let res = networking::fetch_match(
                             name,
                             region_id,
-                            id,
+                            &id.to_string(),
                             &version,
                             &state.client,
                         )
                         .await
-                        .map(|json| (Box::new(json), id_i64))
+                        .map(|json| (Box::new(json), id))
                         .map_err(Errors::Request);
                         message_sender(Results::MatchDetails(res), &state.ctx, &state.sender).await;
                     }
@@ -374,7 +371,7 @@ pub fn spawn_gui_shit(
 // }
 
 async fn get_icon(
-    id: i64,
+    id: i16,
     version: &str,
     client: &reqwest::Client,
 ) -> Result<Bytes, reqwest::Error> {

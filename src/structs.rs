@@ -18,9 +18,10 @@ pub struct Data {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchPlayerMatchSummaries {
+    // Says if we're on the last page or not
     pub finished_match_summaries: bool,
-    pub match_summaries: Vec<MatchSummary>,
-    pub total_num_matches: i64,
+    // The match summeries for that page
+    pub match_summaries: Box<[MatchSummary]>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,30 +69,6 @@ pub struct Team {
     pub teamplay: f64,
 }
 
-/// Deserialize Player Suggestions
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlayerSuggestions {
-    pub data: PlayerData,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlayerData {
-    pub player_info_suggestions: Vec<PlayerInfoSuggestion>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlayerInfoSuggestion {
-    // #[serde(rename = "__typename")]
-    // pub typename: String,
-    pub icon_id: i64,
-    pub puuid_v4: String,
-    pub summoner_level: i64,
-    pub summoner_name: String,
-}
-
 /// Deserialize Player Updates
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,7 +85,7 @@ pub struct UpdateData {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdatePlayerProfile {
-    pub error_reason: Option<String>,
+    pub error_reason: Option<Box<str>>,
     pub success: bool,
 }
 
@@ -181,8 +158,10 @@ pub struct ProfilePlayerInfo {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileInfo {
-    pub icon_id: i64,
-    pub summoner_level: i64,
+    /// No player is near level There are currentonly only 6,300 icons as of September 27th, 2023
+    pub icon_id: i16,
+    /// No player is near level 32,767
+    pub summoner_level: i16,
     pub summoner_name: Box<str>,
 }
 

@@ -26,7 +26,7 @@ pub enum Results {
 pub enum Payload {
     MatchSummaries {
         name: Arc<String>,
-        roles: Vec<u8>,
+        roles: Option<u8>,
         page: u8,
         region_id: &'static str,
     },
@@ -58,7 +58,7 @@ pub enum Payload {
     GetMatchDetails {
         name: Arc<String>,
         version: Arc<String>,
-        id: String,
+        id: i64,
         region_id: &'static str,
     },
 }
@@ -74,7 +74,7 @@ pub struct MyEguiApp {
     // Actively tracked state of GUI components
     refresh_enabled: bool,
     update_enabled: bool,
-    icon_id: i64,
+    icon_id: i16,
     role: u8,
 
     // Values used for data lookup
@@ -84,11 +84,11 @@ pub struct MyEguiApp {
     match_summeries: HashMap<i64, MatchFuture>,
 
     // These three are loaded lazily, and may or may not exist!
-    summeries: Option<Vec<MatchSummary>>,
+    summeries: Option<Box<[MatchSummary]>>,
     rank: Option<Vec<RankScore>>,
     ranking: Option<OverallRanking>,
     page: u8,
-    max_page: u8,
+    finished_match_summeries: bool,
 
     // Runtime so the threads don't close
     _rt: Runtime,
@@ -180,7 +180,7 @@ impl MyEguiApp {
             match_summeries: Default::default(),
             icon_id: -1,
             page: 1,
-            max_page: 0,
+            finished_match_summeries: true,
             _rt,
         }
     }
@@ -192,7 +192,7 @@ impl MyEguiApp {
     fn update_matches(&self, name: Arc<String>) {
         self.send_message(Payload::MatchSummaries {
             name: name.clone(),
-            roles: get_role_index(self.role).map_or_else(Vec::new, |role| vec![role]),
+            roles: get_role_index(self.role),
             region_id: self.data_dragon.region,
             page: self.page,
         });
@@ -303,12 +303,12 @@ impl MyEguiApp {
                 Results::MatchSum(match_sums) => match match_sums {
                     Ok(matches) => {
                         let data = matches.data.fetch_player_match_summaries;
-                        self.max_page = data.total_num_matches as u8;
+                        self.finished_match_summeries = data.finished_match_summaries;
                         let summaries = data.match_summaries;
                         summaries.iter().for_each(|summary| {
                             if self.match_summeries.get(&summary.match_id).is_none() {
                                 self.match_summeries.insert(summary.match_id, MatchFuture { _match: None });
-                                self.send_message(Payload::GetMatchDetails { name: self.message_name.clone(), version: summary.version.clone(), id: summary.match_id.to_string(), region_id: self.data_dragon.region });
+                                self.send_message(Payload::GetMatchDetails { name: self.message_name.clone(), version: summary.version.clone(), id: summary.match_id, region_id: self.data_dragon.region });
                             }
 
                             let champ = &champs[&summary.champion_id];
@@ -424,7 +424,7 @@ impl MyEguiApp {
         self.rank = None;
         self.ranking = None;
         self.page = 1;
-        self.max_page = 0;
+        self.finished_match_summeries = true;
     }
 }
 
@@ -536,7 +536,10 @@ impl eframe::App for MyEguiApp {
                 ui.label(self.page.to_string());
 
                 let button = egui::Button::new("➡");
-                if ui.add_enabled(self.max_page == 20, button).clicked() {
+                if ui
+                    .add_enabled(!self.finished_match_summeries, button)
+                    .clicked()
+                {
                     self.page += 1;
                     self.update_matches(self.message_name.clone())
                 }
@@ -629,7 +632,7 @@ impl eframe::App for MyEguiApp {
                             if sums.is_empty() {
                                 ui.label("No Data");
                             } else {
-                                for summary in sums {
+                                for summary in sums.iter() {
                                     let champ = &champs[&summary.champion_id];
                                     self.match_page(summary, ui, ctx, champ);
                                     ui.separator();

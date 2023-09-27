@@ -55,6 +55,6 @@ pub struct FetchProfilePlayerInfo {
 pub struct FetchMatch<'a> {
     pub summoner_name: Arc<String>,
     pub region_id: &'static str,
-    pub match_id: String,
+    pub match_id: &'a str,
     pub version: &'a str,
 }

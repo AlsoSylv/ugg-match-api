@@ -142,7 +142,7 @@ const FETCH_MATCH: &str = include_str!("../graphql/fetch_match.graphql");
 pub async fn fetch_match(
     name: Arc<String>,
     region_id: &'static str,
-    id: String,
+    id: &str,
     version: &str,
     client: &reqwest::Client,
 ) -> Result<structs::GetMatch, reqwest::Error> {
