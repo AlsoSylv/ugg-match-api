@@ -1,7 +1,10 @@
 use crate::structs::{self, ChampData, GetMatch, Match, MatchSummary, OverallRanking, RankScore};
 use crate::{spawn_gui_shit, Errors, SharedState};
 use chrono::{DateTime, NaiveDateTime, Utc};
-use eframe::egui::{self, TextBuffer, Ui, Vec2};
+use eframe::egui::{
+    self, Button, CentralPanel, ComboBox, Label, RichText, TextBuffer, TextEdit, Ui, Vec2, Sense,
+};
+use eframe::epaint::Color32;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::atomic::AtomicBool;
@@ -65,46 +68,46 @@ pub enum Payload {
 
 /// TODO: Store player data in a sub struct
 pub struct MyEguiApp {
-    messenger: async_channel::Sender<Payload>,
-    receiver: async_channel::Receiver<Results>,
+    pub messenger: async_channel::Sender<Payload>,
+    pub receiver: async_channel::Receiver<Results>,
 
     // The state shared between all worker threads and the main GUI thread
-    shared_state: Arc<SharedState>,
+    pub shared_state: Arc<SharedState>,
 
     // Actively tracked state of GUI components
-    refresh_enabled: bool,
-    update_enabled: bool,
-    icon_id: i16,
-    role: u8,
+    pub refresh_enabled: bool,
+    pub update_enabled: bool,
+    pub icon_id: i16,
+    pub role: u8,
 
     // Values used for data lookup
-    active_player: String,
-    message_name: Arc<String>,
-    data_dragon: DataDragon,
-    match_summeries: HashMap<i64, MatchFuture>,
+    pub active_player: String,
+    pub message_name: Arc<String>,
+    pub data_dragon: DataDragon,
+    pub match_summeries: HashMap<i64, MatchFuture>,
 
     // These three are loaded lazily, and may or may not exist!
-    summeries: Option<Box<[MatchSummary]>>,
-    rank: Option<Vec<RankScore>>,
-    ranking: Option<OverallRanking>,
-    page: u8,
-    finished_match_summeries: bool,
+    pub summeries: Option<Box<[MatchSummary]>>,
+    pub rank: Option<Vec<RankScore>>,
+    pub ranking: Option<OverallRanking>,
+    pub page: u8,
+    pub finished_match_summeries: bool,
 
     // Runtime so the threads don't close
     _rt: Runtime,
 }
 
 /// This is really only used to avoid spamming network requests
-struct MatchFuture {
-    _match: Option<Match>,
+pub struct MatchFuture {
+    pub _match: Option<Match>,
 }
 
 /// This stores all data dragon assets that are being used at any given time, that are not in the shared state
-struct DataDragon {
-    ver_started: bool,
-    champ_info_started: bool,
-    region_id_name: HashMap<&'static str, &'static str>,
-    region: &'static str,
+pub struct DataDragon {
+    pub ver_started: bool,
+    pub champ_info_started: bool,
+    pub region_id_name: HashMap<&'static str, &'static str>,
+    pub region: &'static str,
 }
 
 /// Struct representing all the data of a champ we display
@@ -144,17 +147,6 @@ static ROLES: [&str; 6] = ["Top", "Jungle", "Mid", "ADC", "Support", "None"];
 const UGG_ROLES_REVERSED: [&str; 8] =
     ["", "Jungle", "Support", "ADC", "Top", "Mid", "Aram", "None"];
 
-fn get_role_index(role: u8) -> Option<u8> {
-    match role {
-        0 => Some(4), // Top
-        1 => Some(1), // Jungle
-        2 => Some(5), // Mid
-        3 => Some(3), // ADC
-        4 => Some(2), // Support
-        _ => None,    // No role, used to map to an empty vec
-    }
-}
-
 impl MyEguiApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let (_rt, sender, receiver, shared_state) = spawn_gui_shit(&_cc.egui_ctx);
@@ -172,7 +164,7 @@ impl MyEguiApp {
             data_dragon: DataDragon {
                 ver_started: false,
                 champ_info_started: false,
-                region_id_name: HashMap::from([("na1", "North America"), ("euw1", "EU West")]),
+                region_id_name: HashMap::from([("na1", "NA"), ("euw1", "EUW")]),
                 region: "na1",
             },
             messenger: sender,
@@ -183,32 +175,6 @@ impl MyEguiApp {
             finished_match_summeries: true,
             _rt,
         }
-    }
-
-    fn send_message(&self, payload: Payload) {
-        self.messenger.try_send(payload).unwrap();
-    }
-
-    fn update_matches(&self, name: Arc<String>) {
-        self.send_message(Payload::MatchSummaries {
-            name: name.clone(),
-            roles: get_role_index(self.role),
-            region_id: self.data_dragon.region,
-            page: self.page,
-        });
-        self.send_message(Payload::PlayerRanks {
-            name: name.clone(),
-            region_id: self.data_dragon.region,
-        });
-        self.send_message(Payload::PlayerRanking {
-            name: name.clone(),
-            region_id: self.data_dragon.region,
-        });
-        self.send_message(Payload::PlayerInfo {
-            name: name.clone(),
-            version_index: 0,
-            region_id: self.data_dragon.region,
-        });
     }
 
     fn match_page(
@@ -297,127 +263,6 @@ impl MyEguiApp {
         }
     }
 
-    fn update_data(&mut self, versions: Arc<[String]>, champs: Arc<HashMap<i64, Champ>>) {
-        if let Ok(receiver) = self.receiver.try_recv() {
-            match receiver {
-                Results::MatchSum(match_sums) => match match_sums {
-                    Ok(matches) => {
-                        let data = matches.data.fetch_player_match_summaries;
-                        self.finished_match_summeries = data.finished_match_summaries;
-                        let summaries = data.match_summaries;
-                        summaries.iter().for_each(|summary| {
-                            if self.match_summeries.get(&summary.match_id).is_none() {
-                                self.match_summeries.insert(summary.match_id, MatchFuture { _match: None });
-                                self.send_message(Payload::GetMatchDetails { name: self.message_name.clone(), version: summary.version.clone(), id: summary.match_id, region_id: self.data_dragon.region });
-                            }
-
-                            let champ = &champs[&summary.champion_id];
-                            if !champ.image_started.load(std::sync::atomic::Ordering::Relaxed) {
-                                let key = &champ.key;
-                                self.send_message(
-                                    Payload::GetChampImage {
-                                        url: format!(
-                                            "http://ddragon.leagueoflegends.com/cdn/{}/img/champion/{}.png",
-                                            versions[0], key
-                                        ),
-                                        id: summary.champion_id,
-                                    },
-                                );
-                                champ.image_started.store(true, std::sync::atomic::Ordering::Relaxed);
-                            }
-                        });
-                        self.summeries = Some(summaries)
-                    }
-                    Err(err) => {
-                        dbg!("{:?}", err);
-                    }
-                },
-                Results::PlayerUpdate(update) => match update {
-                    Ok(updated) => {
-                        let data = updated.data.update_player_profile;
-                        if data.success {
-                            self.update_matches(self.message_name.clone());
-                        } else {
-                            dbg!("{:?}", data.error_reason);
-                        }
-                    }
-                    Err(err) => {
-                        dbg!("{:?}", err);
-                    }
-                },
-                Results::ProfileRanks(rank) => match rank {
-                    Ok(rank) => {
-                        let data = rank
-                            .data
-                            .fetch_profile_ranks
-                            .rank_scores
-                            .into_iter()
-                            .filter_map(|rank| {
-                                if rank.queue_type.is_empty() {
-                                    None
-                                } else {
-                                    Some(rank)
-                                }
-                            })
-                            .collect();
-                        self.rank = Some(data);
-                    }
-                    Err(err) => {
-                        dbg!("{:?}", err);
-                    }
-                },
-                Results::Ranking(ranking) => match ranking {
-                    Ok(ranking) => {
-                        self.ranking = ranking.data.overall_ranking;
-                    }
-                    Err(err) => {
-                        dbg!("{:?}", err);
-                    }
-                },
-                // Todo: Display this info
-                Results::PlayerInfo(info) => match info {
-                    Ok(info) => {
-                        let info = info.data.profile_player_info.unwrap();
-                        if info.summoner_name.as_ref() == self.message_name.as_str() {
-                            self.icon_id = info.icon_id;
-                        }
-                    }
-                    Err(err) => {
-                        dbg!("{:?}", err);
-                    }
-                },
-                Results::PlayerIcon(data) => {
-                    todo!("{:?}", data)
-                }
-                Results::ChampImage(image_errors) => {
-                    todo!("{:?}", image_errors)
-                }
-                Results::MatchDetails(deets) => match deets {
-                    Ok((match_details, id)) => {
-                        self.match_summeries.insert(
-                            id,
-                            MatchFuture {
-                                _match: Some(match_details.data.data_match),
-                            },
-                        );
-                    }
-                    Err(err) => {
-                        dbg!("{:?}", err);
-                    }
-                },
-
-                Results::ChampJson(err) => {
-                    todo!("{:?}", err)
-                }
-
-                payload => unreachable!(
-                    "App has reached an impossible state, this should already be covered {:?}",
-                    payload
-                ),
-            }
-        };
-    }
-
     fn zero_player(&mut self) {
         self.icon_id = -1;
         self.summeries = None;
@@ -428,218 +273,358 @@ impl MyEguiApp {
     }
 }
 
+fn custom_window_frame(
+    ctx: &egui::Context,
+    frame: &mut eframe::Frame,
+    title: &str,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    let window_frame = egui::Frame {
+        fill: ctx.style().visuals.window_fill(),
+        rounding: 15.0.into(),
+        stroke: ctx.style().visuals.widgets.noninteractive.fg_stroke,
+        outer_margin: 0.5.into(),
+        ..Default::default()
+    };
+
+    CentralPanel::default().frame(window_frame).show(ctx, |ui| {
+        let app_rect = ui.max_rect();
+
+        const TITLE_BAR_HEIGHT: f32 = 32.0;
+        let title_bar_rect = {
+            let mut rect = app_rect;
+            rect.max.y = rect.min.y + TITLE_BAR_HEIGHT;
+            rect
+        };
+        title_bar_ui(ui, frame, title_bar_rect, title);
+
+        let content_rect = {
+            let mut rect = app_rect;
+            rect.min.y = title_bar_rect.max.y;
+            rect
+        }
+        .shrink(4.0);
+
+        let mut content_ui = ui.child_ui(content_rect, *ui.layout());
+        add_contents(&mut content_ui);
+    });
+}
+
+fn title_bar_ui(
+    ui: &mut egui::Ui,
+    frame: &mut eframe::Frame,
+    title_bar_rect: eframe::epaint::Rect,
+    title: &str,
+) {
+    use egui::*;
+
+    let painter = ui.painter();
+
+    let title_bar_response = ui.interact(title_bar_rect, Id::new("title_bar"), Sense::click());
+
+    // Paint the title:
+    painter.text(
+        title_bar_rect.center(),
+        Align2::CENTER_CENTER,
+        title,
+        FontId::proportional(20.0),
+        ui.style().visuals.text_color(),
+    );
+
+    // Paint the line under the title:
+    painter.line_segment(
+        [
+            title_bar_rect.left_bottom() + vec2(1.0, 0.0),
+            title_bar_rect.right_bottom() + vec2(-1.0, 0.0),
+        ],
+        ui.visuals().widgets.noninteractive.bg_stroke,
+    );
+
+    // Interact with the title bar (drag to move window):
+    if title_bar_response.double_clicked() {
+        frame.set_maximized(!frame.info().window_info.maximized);
+    } else if title_bar_response.is_pointer_button_down_on() {
+        frame.drag_window();
+    }
+
+    ui.allocate_ui_at_rect(title_bar_rect, |ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.visuals_mut().button_frame = false;
+            ui.add_space(8.0);
+            close_maximize_minimize(ui, frame);
+        });
+    });
+}
+
+fn close_maximize_minimize(ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    let button_height = 12.0;
+
+    let close_response = ui
+        .add(Button::new(RichText::new("❌").size(button_height)))
+        .on_hover_text("Close the window");
+    if close_response.clicked() {
+        frame.close();
+    }
+
+    if frame.info().window_info.maximized {
+        let maximized_response = ui
+            .add(Button::new(RichText::new("🗗").size(button_height)))
+            .on_hover_text("Restore window");
+        if maximized_response.clicked() {
+            frame.set_maximized(false);
+        }
+    } else {
+        let maximized_response = ui
+            .add(Button::new(RichText::new("🗗").size(button_height)))
+            .on_hover_text("Maximize window");
+        if maximized_response.clicked() {
+            frame.set_maximized(true);
+        }
+    }
+
+    let minimized_response = ui
+        .add(Button::new(RichText::new("🗕").size(button_height)))
+        .on_hover_text("Minimize the window");
+    if minimized_response.clicked() {
+        frame.set_minimized(true);
+    }
+}
+
 impl eframe::App for MyEguiApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if !self.active_player.is_empty() {
-            self.refresh_enabled = true;
-            self.update_enabled = true;
-        } else {
-            self.refresh_enabled = false;
-            self.update_enabled = false;
-        };
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        egui::Rgba::TRANSPARENT.to_array()
+    }
 
-        let Some(versions) = self.shared_state.versions.get() else {
-            self.load_version(ctx);
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.spinner();
-            });
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        frame.set_decorations(false);
 
-            return;
-        };
+        custom_window_frame(ctx, frame, "Hell", |ui| {
+            if !self.active_player.is_empty() {
+                self.refresh_enabled = true;
+                self.update_enabled = true;
+            } else {
+                self.refresh_enabled = false;
+                self.update_enabled = false;
+            };
 
-        let versions = versions.clone();
-
-        let Some(champs) = self.shared_state.champs.get() else {
-            if !self.data_dragon.champ_info_started {
-                self.send_message(Payload::GetChampInfo {
-                    url: format!(
-                        "http://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json",
-                        versions[0]
-                    ),
+            let Some(versions) = self.shared_state.versions.get() else {
+                self.load_version(ctx);
+                egui::CentralPanel::default().show_inside(ui, |ui| {
+                    ui.spinner();
                 });
-                self.data_dragon.champ_info_started = true;
-            }
 
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.spinner();
-            });
+                return;
+            };
 
-            return;
-        };
+            let versions = versions.clone();
 
-        let champs = champs.clone();
-
-        self.update_data(versions.clone(), champs.clone());
-
-        let side_panel_ui = |ui: &mut Ui| {
-            ui.add_space(5.0);
-
-            ui.horizontal(|ui| {
-                ui.label("Player: ");
-
-                let search_bar = ui.text_edit_singleline(&mut self.active_player);
-
-                if search_bar.clicked() && !self.active_player.is_empty() {
-                    if !self.active_player.is_empty() {
-                        self.message_name = Arc::new(self.active_player.clone());
-                        self.update_matches(self.message_name.clone());
-                    } else {
-                        self.zero_player();
-                    }
-                }
-
-                if search_bar.changed() {
-                    self.zero_player();
-                }
-            });
-
-            ui.add_space(5.0);
-
-            ui.horizontal(|ui| {
-                ui.label("Roles: ");
-
-                egui::ComboBox::from_id_source("roles")
-                    .selected_text(ROLES[self.role as usize])
-                    .show_ui(ui, |ui| {
-                        ROLES.iter().enumerate().for_each(|(index, text)| {
-                            ui.selectable_value(&mut self.role, index as u8, *text);
-                        })
+            let Some(champs) = self.shared_state.champs.get() else {
+                if !self.data_dragon.champ_info_started {
+                    self.send_message(Payload::GetChampInfo {
+                        url: format!(
+                            "http://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json",
+                            versions[0]
+                        ),
                     });
-            });
+                    self.data_dragon.champ_info_started = true;
+                }
 
-            ui.add_space(5.0);
+                egui::CentralPanel::default().show_inside(ui, |ui| {
+                    ui.spinner();
+                });
 
-            ui.horizontal(|ui| {
-                ui.label("Regions: ");
+                return;
+            };
 
-                egui::ComboBox::from_id_source("regions")
-                    .selected_text(self.data_dragon.region_id_name[self.data_dragon.region])
-                    .show_ui(ui, |ui| {
-                        self.data_dragon
-                            .region_id_name
-                            .iter()
-                            .for_each(|(index, name)| {
-                                if ui.button(*name).clicked() {
-                                    self.data_dragon.region = *index;
-                                };
+            let champs = champs.clone();
+
+            self.update_data(versions.clone(), champs.clone());
+
+            egui::SidePanel::left("Left Panel")
+                // 15% of available width
+                .exact_width(0.15 * ui.available_width())
+                .resizable(false)
+                .show_inside(ui, |ui| {
+                    let full_height = ui.available_height();
+
+                    ui.with_layout(
+                        egui::Layout::left_to_right(eframe::emath::Align::Min),
+                        |ui| {
+                            ui.label("Player: ");
+
+                            let active_player = &mut self.active_player;
+                            let search_bar = TextEdit::singleline(active_player);
+
+                            let search_bar =
+                                ui.add_sized(Vec2::new(ui.available_width(), 0.0), search_bar);
+
+                            if search_bar.clicked()
+                                && !active_player.ends_with(' ')
+                                && !self.active_player.is_empty()
+                            {
+                                self.message_name = Arc::new(self.active_player.clone());
+                                self.update_matches(self.message_name.clone());
+                            }
+
+                            if search_bar.changed() {
+                                self.zero_player();
+                            }
+                        },
+                    );
+
+                    ui.add_space(0.01 * full_height);
+
+                    ui.with_layout(
+                        egui::Layout::left_to_right(eframe::emath::Align::Min),
+                        |ui| {
+                            // Do not ask how we got here, but we got here
+                            let third = ui.available_width() * 0.3;
+                            ui.set_width(third * 3.1);
+
+                            let button = Button::new("⬅").min_size(Vec2::new(third, 0.0));
+                            if ui.add_enabled(self.page > 1, button).clicked() {
+                                self.page -= 1;
+                                self.update_matches(self.message_name.clone())
+                            }
+
+                            let label = Label::new(format!("{}", self.page));
+                            ui.add_sized(Vec2::new(ui.available_width() - third, 0.0), label);
+
+                            let button = egui::Button::new("➡").min_size(Vec2::new(third, 0.0));
+                            if ui
+                                .add_enabled(!self.finished_match_summeries, button)
+                                .clicked()
+                            {
+                                self.page += 1;
+                                self.update_matches(self.message_name.clone())
+                            }
+                        },
+                    );
+
+                    ui.add_space(0.01 * full_height);
+
+                    ui.horizontal(|ui| {
+                        ui.label("Role: ");
+                        ComboBox::from_id_source("Role Select")
+                            .selected_text(ROLES[self.role as usize])
+                            .width(ui.available_width())
+                            .show_ui(ui, |ui| {
+                                ROLES.iter().enumerate().for_each(|(index, value)| {
+                                    ui.selectable_value(&mut self.role, index as u8, *value);
+                                });
                             });
                     });
-            });
 
-            ui.horizontal(|ui| {
-                let button = egui::Button::new("⬅");
-                if ui.add_enabled(self.page > 1, button).clicked() {
-                    self.page -= 1;
-                    self.update_matches(self.message_name.clone())
-                }
+                    ui.add_space(0.01 * full_height);
 
-                ui.label(self.page.to_string());
+                    ui.horizontal(|ui| {
+                        ui.label("Region: ");
 
-                let button = egui::Button::new("➡");
-                if ui
-                    .add_enabled(!self.finished_match_summeries, button)
-                    .clicked()
-                {
-                    self.page += 1;
-                    self.update_matches(self.message_name.clone())
-                }
-            });
+                        egui::ComboBox::from_id_source("regions")
+                            .selected_text(self.data_dragon.region_id_name[self.data_dragon.region])
+                            .width(ui.available_width())
+                            .show_ui(ui, |ui| {
+                                self.data_dragon
+                                    .region_id_name
+                                    .iter()
+                                    .for_each(|(index, name)| {
+                                        ui.selectable_value(
+                                            &mut self.data_dragon.region,
+                                            *index,
+                                            *name,
+                                        );
+                                    });
+                            });
+                    });
 
-            ui.add_space(5.0);
+                    ui.add_space(0.01 * full_height);
 
-            let button = egui::Button::new("Refresh Player");
-            if ui.add_enabled(self.refresh_enabled, button).clicked() {
-                self.update_matches(self.message_name.clone());
-            }
+                    let button = Button::new("Refresh Player")
+                        .min_size(Vec2::new(ui.available_width(), 0.0));
+                    if ui.add_enabled(self.refresh_enabled, button).clicked() {
+                        self.update_matches(self.message_name.clone());
+                    }
 
-            ui.add_space(5.0);
+                    ui.add_space(0.01 * full_height);
 
-            let button = egui::Button::new("Update Player");
-            if ui.add_enabled(self.update_enabled, button).clicked() {
-                self.update_player();
-            }
-
-            egui::TopBottomPanel::bottom("bottom_panel").show_inside(ui, |ui| {
-                ui.add_space(5.0);
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::LEFT), |ui| {
-                    egui::widgets::global_dark_light_mode_switch(ui);
+                    let button =
+                        Button::new("Update Player").min_size(Vec2::new(ui.available_width(), 0.0));
+                    if ui.add_enabled(self.refresh_enabled, button).clicked() {
+                        self.update_player();
+                    }
                 });
-            });
-        };
 
-        egui::SidePanel::left("side_panel")
-            .resizable(false)
-            .show(ctx, side_panel_ui);
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                ui.horizontal(|ui| {
-                    if self.icon_id != -1 {
-                        if let Ok(map) = self.shared_state.player_icons.try_read() {
-                            if let Some(texture) = map.get(&self.icon_id) {
-                                ui.image(texture, Vec2::splat(50.0));
+            egui::CentralPanel::default().show_inside(ui, |ui| {
+                ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                    ui.horizontal(|ui| {
+                        if self.icon_id != -1 {
+                            if let Ok(map) = self.shared_state.player_icons.try_read() {
+                                if let Some(texture) = map.get(&self.icon_id) {
+                                    ui.image(texture, Vec2::splat(50.0));
+                                } else {
+                                    ui.spinner();
+                                }
                             } else {
                                 ui.spinner();
                             }
-                        } else {
-                            ui.spinner();
                         }
-                    }
-
-                    if let Some(scores) = &self.rank {
-                        if scores.is_empty() {
-                            ui.vertical(|ui| {
-                                ui.label("Unranked");
-                                ui.label("LP: None");
-                                ui.label("Ranking: None");
-                            });
-                        } else {
-                            for rank in scores {
+    
+                        if let Some(scores) = &self.rank {
+                            if scores.is_empty() {
                                 ui.vertical(|ui| {
-                                    ui.label(format!("Rank: {}", rank.rank));
-                                    ui.label(format!("LP: {}", rank.lp));
-                                    ui.label(format!("Queue: {}", rank.queue_type));
+                                    ui.label("Unranked");
+                                    ui.label("LP: None");
+                                    ui.label("Ranking: None");
                                 });
-
-                                ui.separator();
-
-                                ui.vertical(|ui| {
-                                    ui.label(format!("Wins: {}", rank.wins));
-                                    ui.label(format!("Losses: {}", rank.losses));
-                                    if let Some(ranking) = &self.ranking {
-                                        ui.label(format!(
-                                            "Ranking: {} / {}",
-                                            ranking.overall_ranking, ranking.total_player_count
-                                        ));
-                                    } else {
-                                        ui.label("Ranking: None");
-                                    }
-                                });
-
-                                ui.separator();
-                            }
-                        }
-                    };
-                });
-
-                ui.add_space(5.0);
-
-                if let Some(sums) = &self.summeries {
-                    ui.separator();
-                    egui::ScrollArea::vertical()
-                        .max_height(ui.available_height())
-                        .show(ui, |ui| {
-                            if sums.is_empty() {
-                                ui.label("No Data");
                             } else {
-                                for summary in sums.iter() {
-                                    let champ = &champs[&summary.champion_id];
-                                    self.match_page(summary, ui, ctx, champ);
+                                for rank in scores {
+                                    ui.vertical(|ui| {
+                                        ui.label(format!("Rank: {}", rank.rank));
+                                        ui.label(format!("LP: {}", rank.lp));
+                                        ui.label(format!("Queue: {}", rank.queue_type));
+                                    });
+    
+                                    ui.separator();
+    
+                                    ui.vertical(|ui| {
+                                        ui.label(format!("Wins: {}", rank.wins));
+                                        ui.label(format!("Losses: {}", rank.losses));
+                                        if let Some(ranking) = &self.ranking {
+                                            ui.label(format!(
+                                                "Ranking: {} / {}",
+                                                ranking.overall_ranking, ranking.total_player_count
+                                            ));
+                                        } else {
+                                            ui.label("Ranking: None");
+                                        }
+                                    });
+    
                                     ui.separator();
                                 }
                             }
-                        });
-                }
+                        };
+                    });
+    
+                    ui.add_space(5.0);
+    
+                    if let Some(sums) = &self.summeries {
+                        ui.separator();
+                        egui::ScrollArea::vertical()
+                            .max_height(ui.available_height())
+                            .show(ui, |ui| {
+                                if sums.is_empty() {
+                                    ui.label("No Data");
+                                } else {
+                                    for summary in sums.iter() {
+                                        let champ = &champs[&summary.champion_id];
+                                        self.match_page(summary, ui, ctx, champ);
+                                        ui.separator();
+                                    }
+                                }
+                            });
+                    }
+                });
             });
         });
     }

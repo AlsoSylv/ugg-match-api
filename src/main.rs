@@ -18,6 +18,7 @@ mod graphql;
 mod networking;
 mod structs;
 mod ui;
+mod ui_logic;
 
 fn main() {
     let native_options = eframe::NativeOptions::default();
