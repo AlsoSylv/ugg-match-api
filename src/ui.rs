@@ -2,7 +2,7 @@ use crate::structs::{self, ChampData, GetMatch, Match, MatchSummary, OverallRank
 use crate::{spawn_gui_shit, Errors, SharedState};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use eframe::egui::{
-    self, Button, CentralPanel, ComboBox, Label, RichText, TextBuffer, TextEdit, Ui, Vec2, Sense,
+    self, Button, CentralPanel, ComboBox, Label, RichText, TextBuffer, TextEdit, Ui, Vec2,
 };
 use eframe::epaint::Color32;
 use std::collections::HashMap;
@@ -175,74 +175,6 @@ impl MyEguiApp {
             finished_match_summeries: true,
             _rt,
         }
-    }
-
-    fn match_page(
-        &self,
-        summary: &MatchSummary,
-        ui: &mut egui::Ui,
-        ctx: &egui::Context,
-        champ: &Champ,
-    ) {
-        let id = ui.make_persistent_id(summary.match_id);
-
-        egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, false)
-            .show_header(ui, |ui| {
-                if let Ok(image) = &champ.image.try_read() {
-                    if let Some(texture) = &**image {
-                        ui.image(texture, Vec2::splat(40.0));
-                    } else {
-                        ui.spinner();
-                    }
-                } else {
-                    ui.spinner();
-                }
-
-                ui.vertical(|ui| {
-                    ui.label(&champ.name);
-                    ui.label(UGG_ROLES_REVERSED[summary.role as usize]);
-                });
-                ui.vertical(|ui| {
-                    let win = if summary.win { "Win" } else { "Loss" };
-
-                    ui.label(win);
-
-                    let kda = format!("{}/{}/{}", summary.kills, summary.deaths, summary.assists);
-
-                    ui.label(kda);
-                });
-            })
-            .body(|ui| {
-                let map = &self.match_summeries;
-                {
-                    if let Some(md) = map.get(&summary.match_id) {
-                        if let Some(md) = &md._match {
-                            let player_data = |ui: &mut Ui, role_index: u8, name: &str| {
-                                ui.horizontal(|ui| {
-                                    ui.label(UGG_ROLES_REVERSED[role_index as usize]);
-                                    ui.label(name);
-                                });
-                            };
-
-                            ui.horizontal(|ui| {
-                                ui.vertical(|ui| {
-                                    for player in md.match_summary.team_a.iter() {
-                                        player_data(ui, player.role, &player.summoner_name);
-                                    }
-                                });
-
-                                ui.separator();
-
-                                ui.vertical(|ui| {
-                                    for player in md.match_summary.team_b.iter() {
-                                        player_data(ui, player.role, &player.summoner_name);
-                                    }
-                                });
-                            });
-                        }
-                    }
-                }
-            });
     }
 
     fn update_player(&self) {
@@ -555,13 +487,17 @@ impl eframe::App for MyEguiApp {
                     }
                 });
 
-            egui::CentralPanel::default().show_inside(ui, |ui| {
-                ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
+            let height = ui.available_height();
+
+            if let Some(ranks) = &self.rank {
+                ui.add_space(0.01 * height);
+
+                egui::TopBottomPanel::top("Top Panel").show_inside(ui, |ui| {
                     ui.horizontal(|ui| {
                         if self.icon_id != -1 {
                             if let Ok(map) = self.shared_state.player_icons.try_read() {
                                 if let Some(texture) = map.get(&self.icon_id) {
-                                    ui.image(texture, Vec2::splat(50.0));
+                                    ui.image(texture, Vec2::splat(0.1 * height));
                                 } else {
                                     ui.spinner();
                                 }
@@ -569,63 +505,145 @@ impl eframe::App for MyEguiApp {
                                 ui.spinner();
                             }
                         }
-    
-                        if let Some(scores) = &self.rank {
-                            if scores.is_empty() {
-                                ui.vertical(|ui| {
-                                    ui.label("Unranked");
-                                    ui.label("LP: None");
-                                    ui.label("Ranking: None");
-                                });
-                            } else {
-                                for rank in scores {
-                                    ui.vertical(|ui| {
-                                        ui.label(format!("Rank: {}", rank.rank));
-                                        ui.label(format!("LP: {}", rank.lp));
-                                        ui.label(format!("Queue: {}", rank.queue_type));
-                                    });
-    
-                                    ui.separator();
-    
-                                    ui.vertical(|ui| {
-                                        ui.label(format!("Wins: {}", rank.wins));
-                                        ui.label(format!("Losses: {}", rank.losses));
-                                        if let Some(ranking) = &self.ranking {
-                                            ui.label(format!(
-                                                "Ranking: {} / {}",
-                                                ranking.overall_ranking, ranking.total_player_count
-                                            ));
-                                        } else {
-                                            ui.label("Ranking: None");
-                                        }
-                                    });
-    
-                                    ui.separator();
-                                }
-                            }
-                        };
-                    });
-    
-                    ui.add_space(5.0);
-    
-                    if let Some(sums) = &self.summeries {
-                        ui.separator();
-                        egui::ScrollArea::vertical()
-                            .max_height(ui.available_height())
-                            .show(ui, |ui| {
-                                if sums.is_empty() {
-                                    ui.label("No Data");
-                                } else {
-                                    for summary in sums.iter() {
-                                        let champ = &champs[&summary.champion_id];
-                                        self.match_page(summary, ui, ctx, champ);
-                                        ui.separator();
-                                    }
-                                }
+
+                        if ranks.is_empty() {
+                            ui.vertical(|ui| {
+                                ui.label("Unranked");
+                                ui.label("LP: None");
+                                ui.label("Ranking: None");
                             });
+                        } else {
+                            for rank in ranks {
+                                ui.vertical(|ui| {
+                                    ui.label(format!("Rank: {}", rank.rank));
+                                    ui.label(format!("LP: {}", rank.lp));
+                                    ui.label(format!("Queue: {}", rank.queue_type));
+                                });
+
+                                ui.separator();
+
+                                ui.vertical(|ui| {
+                                    ui.label(format!("Wins: {}", rank.wins));
+                                    ui.label(format!("Losses: {}", rank.losses));
+                                    if let Some(ranking) = &self.ranking {
+                                        ui.label(format!(
+                                            "Ranking: {} / {}",
+                                            ranking.overall_ranking, ranking.total_player_count
+                                        ));
+                                    } else {
+                                        ui.label("Ranking: None");
+                                    }
+                                });
+
+                                ui.separator();
+                            }
+                        }
+                    });
+
+                    ui.add_space(0.01 * height);
+                });
+            }
+
+            ui.add_space(0.01 * height);
+
+            egui::ScrollArea::vertical()
+                .max_height(ui.available_height())
+                .show(ui, |ui| {
+                    if let Some(summeries) = &self.summeries {
+                        if summeries.is_empty() {
+                            ui.label("No Recent Matches");
+                        } else {
+                            for summary in summeries.iter() {
+                                let champ = &champs[&summary.champion_id];
+                                ui.add_space(0.01 * height);
+                                let id = ui.make_persistent_id(summary.match_id);
+
+                                egui::collapsing_header::CollapsingState::load_with_default_open(
+                                    ctx, id, false,
+                                )
+                                .show_header(ui, |ui| {
+                                    if let Ok(image) = &champ.image.try_read() {
+                                        if let Some(texture) = &**image {
+                                            ui.image(texture, Vec2::splat(0.08 * height));
+                                        } else {
+                                            ui.spinner();
+                                        }
+                                    } else {
+                                        ui.spinner();
+                                    }
+
+                                    ui.vertical(|ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(&champ.name);
+                                            ui.label(UGG_ROLES_REVERSED[summary.role as usize]);
+                                            let kda = format!(
+                                                "{}/{}/{}",
+                                                summary.kills, summary.deaths, summary.assists
+                                            );
+
+                                            ui.label(kda);
+                                        });
+
+                                        ui.horizontal(|ui| {
+                                            if summary.win {
+                                                ui.label(RichText::new("Win").color(Color32::KHAKI))
+                                            } else {
+                                                ui.label(RichText::new("Loss").color(Color32::RED))
+                                            };
+                                        })
+                                    });
+                                })
+                                .body(|ui| {
+                                    let map = &self.match_summeries;
+                                    {
+                                        if let Some(md) = map.get(&summary.match_id) {
+                                            if let Some(md) = &md._match {
+                                                let player_data =
+                                                    |ui: &mut Ui, role_index: u8, name: &str| {
+                                                        ui.horizontal(|ui| {
+                                                            ui.label(
+                                                                UGG_ROLES_REVERSED
+                                                                    [role_index as usize],
+                                                            );
+                                                            ui.label(name);
+                                                        });
+                                                    };
+
+                                                ui.horizontal(|ui| {
+                                                    ui.vertical(|ui| {
+                                                        for player in md.match_summary.team_a.iter()
+                                                        {
+                                                            player_data(
+                                                                ui,
+                                                                player.role,
+                                                                &player.summoner_name,
+                                                            );
+                                                        }
+                                                    });
+
+                                                    ui.separator();
+
+                                                    ui.vertical(|ui| {
+                                                        for player in md.match_summary.team_b.iter()
+                                                        {
+                                                            player_data(
+                                                                ui,
+                                                                player.role,
+                                                                &player.summoner_name,
+                                                            );
+                                                        }
+                                                    });
+                                                });
+                                            }
+                                        }
+                                    }
+                                });
+                                // ui.add_space(0.01 * height);
+                                ui.separator();
+                            }
+                        }
                     }
                 });
-            });
         });
     }
 }
