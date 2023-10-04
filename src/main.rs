@@ -31,9 +31,9 @@ fn main() {
 
 pub struct SharedState {
     // This is initilized once, and because of the way the GUI is setup, will always be there afterwards
-    champs: OnceLock<Arc<HashMap<i64, Champ>>>,
-    versions: OnceLock<Arc<[String]>>,
-    player_icons: Arc<RwLock<HashMap<i16, TextureHandle>>>,
+    champs: OnceLock<HashMap<i64, Champ>>,
+    versions: OnceLock<Box<[String]>>,
+    player_icons: RwLock<HashMap<i16, TextureHandle>>,
 }
 
 impl SharedState {
@@ -41,7 +41,7 @@ impl SharedState {
         Self {
             champs: OnceLock::new(),
             versions: OnceLock::new(),
-            player_icons: Arc::new(RwLock::new(HashMap::new())),
+            player_icons: RwLock::new(HashMap::new()),
         }
     }
 
@@ -265,7 +265,7 @@ pub fn spawn_gui_shit(
                             let id: i64 = data.id.parse().unwrap();
                             champs.insert(id, data.into());
                         }
-                        shared_state.champs.get_or_init(|| Arc::new(champs));
+                        shared_state.champs.get_or_init(|| champs);
                     }
                     ui::Payload::GetChampImage { url, id } => {
                         let res = state.client.get(url).send().await;

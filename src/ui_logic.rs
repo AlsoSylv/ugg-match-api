@@ -23,7 +23,7 @@ impl ui::MyEguiApp {
         self.messenger.try_send(payload).unwrap();
     }
 
-    pub fn update_matches(&self, name: Arc<String>) {
+    pub fn update_matches(&self, name: &Arc<String>) {
         self.send_message(Payload::MatchSummaries {
             name: name.clone(),
             roles: get_role_index(self.role),
@@ -45,7 +45,7 @@ impl ui::MyEguiApp {
         });
     }
 
-    pub fn update_data(&mut self, versions: Arc<[String]>, champs: Arc<HashMap<i64, Champ>>) {
+    pub fn update_data(&mut self, versions: &[String], champs: &HashMap<i64, Champ>) {
         if let Ok(receiver) = self.receiver.try_recv() {
             match receiver {
                 Results::MatchSum(match_sums) => match match_sums {
@@ -84,7 +84,7 @@ impl ui::MyEguiApp {
                     Ok(updated) => {
                         let data = updated.data.update_player_profile;
                         if data.success {
-                            self.update_matches(self.message_name.clone());
+                            self.update_matches(&self.message_name);
                         } else {
                             dbg!("{:?}", data.error_reason);
                         }

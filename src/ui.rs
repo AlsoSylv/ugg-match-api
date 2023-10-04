@@ -71,7 +71,7 @@ pub struct MyEguiApp {
     pub receiver: async_channel::Receiver<Results>,
 
     // The state shared between all worker threads and the main GUI thread
-    pub shared_state: Arc<SharedState>,
+    pub shared_state: Option<Arc<SharedState>>,
 
     // Actively tracked state of GUI components
     pub refresh_enabled: bool,
@@ -152,7 +152,7 @@ impl MyEguiApp {
         Self {
             active_player: Default::default(),
             message_name: Default::default(),
-            shared_state,
+            shared_state: Some(shared_state),
             role: 5,
             refresh_enabled: false,
             update_enabled: false,
@@ -328,6 +328,7 @@ impl eframe::App for MyEguiApp {
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         frame.set_decorations(false);
+        let shared_state = self.shared_state.take().unwrap();
 
         custom_window_frame(ctx, frame, "Hell", |ui| {
             if !self.active_player.is_empty() {
@@ -338,7 +339,7 @@ impl eframe::App for MyEguiApp {
                 self.update_enabled = false;
             };
 
-            let Some(versions) = self.shared_state.versions.get() else {
+            let Some(versions) = shared_state.versions.get() else {
                 self.load_version(ctx);
                 egui::CentralPanel::default().show_inside(ui, |ui| {
                     ui.spinner();
@@ -347,9 +348,7 @@ impl eframe::App for MyEguiApp {
                 return;
             };
 
-            let versions = versions.clone();
-
-            let Some(champs) = self.shared_state.champs.get() else {
+            let Some(champs) = shared_state.champs.get() else {
                 if !self.data_dragon.champ_info_started {
                     self.send_message(Payload::GetChampInfo {
                         url: format!(
@@ -367,9 +366,7 @@ impl eframe::App for MyEguiApp {
                 return;
             };
 
-            let champs = champs.clone();
-
-            self.update_data(versions.clone(), champs.clone());
+            self.update_data(&versions, &champs);
 
             egui::SidePanel::left("Left Panel")
                 // 15% of available width
@@ -394,7 +391,7 @@ impl eframe::App for MyEguiApp {
                                 && !self.active_player.is_empty()
                             {
                                 self.message_name = Arc::new(self.active_player.clone());
-                                self.update_matches(self.message_name.clone());
+                                self.update_matches(&self.message_name);
                             }
 
                             if search_bar.changed() {
@@ -415,7 +412,7 @@ impl eframe::App for MyEguiApp {
                             let button = Button::new("⬅").min_size(Vec2::new(third, 0.0));
                             if ui.add_enabled(self.page > 1, button).clicked() {
                                 self.page -= 1;
-                                self.update_matches(self.message_name.clone())
+                                self.update_matches(&self.message_name)
                             }
 
                             let label = Label::new(format!("{}", self.page));
@@ -427,7 +424,7 @@ impl eframe::App for MyEguiApp {
                                 .clicked()
                             {
                                 self.page += 1;
-                                self.update_matches(self.message_name.clone())
+                                self.update_matches(&self.message_name)
                             }
                         },
                     );
@@ -473,7 +470,7 @@ impl eframe::App for MyEguiApp {
                     let button = Button::new("Refresh Player")
                         .min_size(Vec2::new(ui.available_width(), 0.0));
                     if ui.add_enabled(self.refresh_enabled, button).clicked() {
-                        self.update_matches(self.message_name.clone());
+                        self.update_matches(&self.message_name);
                     }
 
                     ui.add_space(0.01 * full_height);
@@ -493,7 +490,7 @@ impl eframe::App for MyEguiApp {
                 egui::TopBottomPanel::top("Top Panel").show_inside(ui, |ui| {
                     ui.horizontal(|ui| {
                         if self.player_data.icon_id != -1 {
-                            if let Ok(map) = self.shared_state.player_icons.try_read() {
+                            if let Ok(map) = shared_state.player_icons.try_read() {
                                 if let Some(texture) = map.get(&self.player_data.icon_id) {
                                     ui.image(texture, Vec2::splat(0.1 * height));
                                 } else {
@@ -642,6 +639,8 @@ impl eframe::App for MyEguiApp {
                     }
                 });
         });
+
+        self.shared_state = Some(shared_state);
     }
 }
 
