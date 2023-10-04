@@ -1,6 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::ui::{self, Champ, MatchFuture, Payload, Results};
+use eframe::egui::TextBuffer;
+
+use crate::{
+    structs::RankScore,
+    ui::{self, Champ, Payload, Results},
+};
 
 fn get_role_index(role: u8) -> Option<u8> {
     match role {
@@ -47,11 +52,11 @@ impl ui::MyEguiApp {
                     Ok(matches) => {
                         let data = matches.data.fetch_player_match_summaries;
                         self.finished_match_summeries = data.finished_match_summaries;
-                        let summaries = data.match_summaries;
-                        summaries.iter().for_each(|summary| {
-                            if self.match_summeries.get(&summary.match_id).is_none() {
-                                self.match_summeries.insert(summary.match_id, MatchFuture { _match: None });
-                                self.send_message(Payload::GetMatchDetails { name: self.message_name.clone(), version: summary.version.clone(), id: summary.match_id, region_id: self.data_dragon.region });
+                        let mut summaries = data.match_summaries;
+                        summaries.iter_mut().for_each(|summary| {
+                            if self.player_data.match_data_map.get(&summary.match_id).is_none() {
+                                self.player_data.match_data_map.insert(summary.match_id, None);
+                                self.send_message(Payload::GetMatchDetails { name: self.message_name.clone(), version: summary.version.take(), id: summary.match_id, region_id: self.data_dragon.region });
                             }
 
                             let champ = &champs[&summary.champion_id];
@@ -69,7 +74,7 @@ impl ui::MyEguiApp {
                                 champ.image_started.store(true, std::sync::atomic::Ordering::Relaxed);
                             }
                         });
-                        self.summeries = Some(summaries)
+                        self.player_data.match_summaries = Some(summaries)
                     }
                     Err(err) => {
                         dbg!("{:?}", err);
@@ -90,20 +95,20 @@ impl ui::MyEguiApp {
                 },
                 Results::ProfileRanks(rank) => match rank {
                     Ok(rank) => {
-                        let data = rank
+                        let data: Vec<RankScore> = rank
                             .data
                             .fetch_profile_ranks
                             .rank_scores
                             .into_iter()
-                            .filter_map(|rank| {
-                                if rank.queue_type.is_empty() {
+                            .filter_map(|val| {
+                                if val.queue_type.is_empty() {
                                     None
                                 } else {
-                                    Some(rank)
+                                    Some(val)
                                 }
                             })
                             .collect();
-                        self.rank = Some(data);
+                        self.player_data.rank_scores = Some(data.into());
                     }
                     Err(err) => {
                         dbg!("{:?}", err);
@@ -111,7 +116,7 @@ impl ui::MyEguiApp {
                 },
                 Results::Ranking(ranking) => match ranking {
                     Ok(ranking) => {
-                        self.ranking = ranking.data.overall_ranking;
+                        self.player_data.ranking = ranking.data.overall_ranking;
                     }
                     Err(err) => {
                         dbg!("{:?}", err);
@@ -122,7 +127,7 @@ impl ui::MyEguiApp {
                     Ok(info) => {
                         let info = info.data.profile_player_info.unwrap();
                         if info.summoner_name.as_ref() == self.message_name.as_str() {
-                            self.icon_id = info.icon_id;
+                            self.player_data.icon_id = info.icon_id;
                         }
                     }
                     Err(err) => {
@@ -137,12 +142,9 @@ impl ui::MyEguiApp {
                 }
                 Results::MatchDetails(deets) => match deets {
                     Ok((match_details, id)) => {
-                        self.match_summeries.insert(
-                            id,
-                            MatchFuture {
-                                _match: Some(match_details.data.data_match),
-                            },
-                        );
+                        self.player_data
+                            .match_data_map
+                            .insert(id, Some(match_details.data.data_match));
                     }
                     Err(err) => {
                         dbg!("{:?}", err);

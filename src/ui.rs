@@ -60,13 +60,12 @@ pub enum Payload {
     },
     GetMatchDetails {
         name: Arc<String>,
-        version: Arc<String>,
+        version: String,
         id: i64,
         region_id: &'static str,
     },
 }
 
-/// TODO: Store player data in a sub struct
 pub struct MyEguiApp {
     pub messenger: async_channel::Sender<Payload>,
     pub receiver: async_channel::Receiver<Results>,
@@ -77,29 +76,28 @@ pub struct MyEguiApp {
     // Actively tracked state of GUI components
     pub refresh_enabled: bool,
     pub update_enabled: bool,
-    pub icon_id: i16,
+    pub finished_match_summeries: bool,
+    pub page: u8,
     pub role: u8,
 
     // Values used for data lookup
     pub active_player: String,
     pub message_name: Arc<String>,
     pub data_dragon: DataDragon,
-    pub match_summeries: HashMap<i64, MatchFuture>,
 
     // These three are loaded lazily, and may or may not exist!
-    pub summeries: Option<Box<[MatchSummary]>>,
-    pub rank: Option<Vec<RankScore>>,
-    pub ranking: Option<OverallRanking>,
-    pub page: u8,
-    pub finished_match_summeries: bool,
+    pub player_data: PlayerData,
 
     // Runtime so the threads don't close
     _rt: Runtime,
 }
 
-/// This is really only used to avoid spamming network requests
-pub struct MatchFuture {
-    pub _match: Option<Match>,
+pub struct PlayerData {
+    pub match_data_map: HashMap<i64, Option<Match>>,
+    pub match_summaries: Option<Box<[MatchSummary]>>,
+    pub rank_scores: Option<Box<[RankScore]>>,
+    pub ranking: Option<OverallRanking>,
+    pub icon_id: i16,
 }
 
 /// This stores all data dragon assets that are being used at any given time, that are not in the shared state
@@ -156,9 +154,6 @@ impl MyEguiApp {
             message_name: Default::default(),
             shared_state,
             role: 5,
-            summeries: None,
-            rank: None,
-            ranking: None,
             refresh_enabled: false,
             update_enabled: false,
             data_dragon: DataDragon {
@@ -167,10 +162,15 @@ impl MyEguiApp {
                 region_id_name: HashMap::from([("na1", "NA"), ("euw1", "EUW")]),
                 region: "na1",
             },
+            player_data: PlayerData {
+                match_data_map: Default::default(),
+                match_summaries: None,
+                rank_scores: None,
+                ranking: None,
+                icon_id: -1,
+            },
             messenger: sender,
             receiver,
-            match_summeries: Default::default(),
-            icon_id: -1,
             page: 1,
             finished_match_summeries: true,
             _rt,
@@ -196,10 +196,10 @@ impl MyEguiApp {
     }
 
     fn zero_player(&mut self) {
-        self.icon_id = -1;
-        self.summeries = None;
-        self.rank = None;
-        self.ranking = None;
+        self.player_data.icon_id = -1;
+        self.player_data.match_summaries = None;
+        self.player_data.rank_scores = None;
+        self.player_data.ranking = None;
         self.page = 1;
         self.finished_match_summeries = true;
     }
@@ -299,20 +299,18 @@ fn close_maximize_minimize(ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         frame.close();
     }
 
-    if frame.info().window_info.maximized {
-        let maximized_response = ui
-            .add(Button::new(RichText::new("🗗").size(button_height)))
-            .on_hover_text("Restore window");
-        if maximized_response.clicked() {
-            frame.set_maximized(false);
-        }
-    } else {
-        let maximized_response = ui
-            .add(Button::new(RichText::new("🗗").size(button_height)))
-            .on_hover_text("Maximize window");
-        if maximized_response.clicked() {
-            frame.set_maximized(true);
-        }
+    let maximized = frame.info().window_info.maximized;
+
+    let button = ui
+        .add(Button::new(RichText::new("🗗").size(button_height)))
+        .on_hover_text(if maximized {
+            "Restore window"
+        } else {
+            "Maximize window"
+        });
+
+    if button.clicked() {
+        frame.set_maximized(!maximized);
     }
 
     let minimized_response = ui
@@ -489,14 +487,14 @@ impl eframe::App for MyEguiApp {
 
             let height = ui.available_height();
 
-            if let Some(ranks) = &self.rank {
+            if let Some(ranks) = &self.player_data.rank_scores {
                 ui.add_space(0.01 * height);
 
                 egui::TopBottomPanel::top("Top Panel").show_inside(ui, |ui| {
                     ui.horizontal(|ui| {
-                        if self.icon_id != -1 {
+                        if self.player_data.icon_id != -1 {
                             if let Ok(map) = self.shared_state.player_icons.try_read() {
-                                if let Some(texture) = map.get(&self.icon_id) {
+                                if let Some(texture) = map.get(&self.player_data.icon_id) {
                                     ui.image(texture, Vec2::splat(0.1 * height));
                                 } else {
                                     ui.spinner();
@@ -513,7 +511,11 @@ impl eframe::App for MyEguiApp {
                                 ui.label("Ranking: None");
                             });
                         } else {
-                            for rank in ranks {
+                            for rank in ranks.iter() {
+                                if rank.queue_type.is_empty() {
+                                    continue;
+                                }
+
                                 ui.vertical(|ui| {
                                     ui.label(format!("Rank: {}", rank.rank));
                                     ui.label(format!("LP: {}", rank.lp));
@@ -525,7 +527,7 @@ impl eframe::App for MyEguiApp {
                                 ui.vertical(|ui| {
                                     ui.label(format!("Wins: {}", rank.wins));
                                     ui.label(format!("Losses: {}", rank.losses));
-                                    if let Some(ranking) = &self.ranking {
+                                    if let Some(ranking) = &self.player_data.ranking {
                                         ui.label(format!(
                                             "Ranking: {} / {}",
                                             ranking.overall_ranking, ranking.total_player_count
@@ -549,7 +551,7 @@ impl eframe::App for MyEguiApp {
             egui::ScrollArea::vertical()
                 .max_height(ui.available_height())
                 .show(ui, |ui| {
-                    if let Some(summeries) = &self.summeries {
+                    if let Some(summeries) = &self.player_data.match_summaries {
                         if summeries.is_empty() {
                             ui.label("No Recent Matches");
                         } else {
@@ -594,47 +596,42 @@ impl eframe::App for MyEguiApp {
                                     });
                                 })
                                 .body(|ui| {
-                                    let map = &self.match_summeries;
+                                    let map = &self.player_data.match_data_map;
                                     {
-                                        if let Some(md) = map.get(&summary.match_id) {
-                                            if let Some(md) = &md._match {
-                                                let player_data =
-                                                    |ui: &mut Ui, role_index: u8, name: &str| {
-                                                        ui.horizontal(|ui| {
-                                                            ui.label(
-                                                                UGG_ROLES_REVERSED
-                                                                    [role_index as usize],
-                                                            );
-                                                            ui.label(name);
-                                                        });
-                                                    };
-
-                                                ui.horizontal(|ui| {
-                                                    ui.vertical(|ui| {
-                                                        for player in md.match_summary.team_a.iter()
-                                                        {
-                                                            player_data(
-                                                                ui,
-                                                                player.role,
-                                                                &player.summoner_name,
-                                                            );
-                                                        }
+                                        if let Some(Some(md)) = map.get(&summary.match_id) {
+                                            let player_data =
+                                                |ui: &mut Ui, role_index: u8, name: &str| {
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(
+                                                            UGG_ROLES_REVERSED[role_index as usize],
+                                                        );
+                                                        ui.label(name);
                                                     });
+                                                };
 
-                                                    ui.separator();
-
-                                                    ui.vertical(|ui| {
-                                                        for player in md.match_summary.team_b.iter()
-                                                        {
-                                                            player_data(
-                                                                ui,
-                                                                player.role,
-                                                                &player.summoner_name,
-                                                            );
-                                                        }
-                                                    });
+                                            ui.horizontal(|ui| {
+                                                ui.vertical(|ui| {
+                                                    for player in md.match_summary.team_a.iter() {
+                                                        player_data(
+                                                            ui,
+                                                            player.role,
+                                                            &player.summoner_name,
+                                                        );
+                                                    }
                                                 });
-                                            }
+
+                                                ui.separator();
+
+                                                ui.vertical(|ui| {
+                                                    for player in md.match_summary.team_b.iter() {
+                                                        player_data(
+                                                            ui,
+                                                            player.role,
+                                                            &player.summoner_name,
+                                                        );
+                                                    }
+                                                });
+                                            });
                                         }
                                     }
                                 });
@@ -648,6 +645,7 @@ impl eframe::App for MyEguiApp {
     }
 }
 
+#[allow(unused)]
 fn format_time(match_time: i64) -> String {
     let native_time = NaiveDateTime::from_timestamp_opt(match_time, 0).unwrap();
     let time: DateTime<Utc> = DateTime::from_local(native_time, Utc);

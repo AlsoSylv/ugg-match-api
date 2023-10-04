@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -54,7 +54,7 @@ pub struct MatchSummary {
     pub summoner_spells: Vec<i64>,
     pub team_a: Vec<Team>,
     pub team_b: Vec<Team>,
-    pub version: Arc<String>,
+    pub version: String,
     pub vision_score: i64,
     pub win: bool,
 }
