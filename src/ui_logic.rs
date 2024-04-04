@@ -7,7 +7,7 @@ use crate::{
     ui::{self, Champ, Payload, Results},
 };
 
-fn get_role_index(role: u8) -> Option<u8> {
+const fn get_role_index(role: u8) -> Option<u8> {
     match role {
         0 => Some(4), // Top
         1 => Some(1), // Jungle
@@ -51,7 +51,7 @@ impl ui::MyEguiApp {
                 Results::MatchSum(match_sums) => match match_sums {
                     Ok(matches) => {
                         let data = matches.data.fetch_player_match_summaries;
-                        self.finished_match_summeries = data.finished_match_summaries;
+                        self.finished_match_summaries = data.match_summaries.len() != 20;
                         let mut summaries = data.match_summaries;
                         summaries.iter_mut().for_each(|summary| {
                             if self.player_data.match_data_map.get(&summary.match_id).is_none() {
@@ -99,6 +99,7 @@ impl ui::MyEguiApp {
                             .data
                             .fetch_profile_ranks
                             .rank_scores
+                            .into_vec()
                             .into_iter()
                             .filter_map(|val| {
                                 if val.queue_type.is_empty() {
@@ -153,6 +154,14 @@ impl ui::MyEguiApp {
 
                 Results::ChampJson(err) => {
                     todo!("{:?}", err)
+                }
+
+                Results::PlayerSuggestions(result) => match result {
+                    Ok(suggestions) => {
+                        println!("Hit!");
+                        self.player_suggestions = suggestions
+                    }
+                    Err(e) => todo!("{:?}", e)
                 }
 
                 payload => unreachable!(

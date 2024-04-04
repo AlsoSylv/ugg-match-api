@@ -9,6 +9,7 @@ use crate::{
     },
     structs,
 };
+use crate::graphql::structs::PlayerInfoSuggestions;
 
 const BASE_URL: &str = "https://u.gg/api";
 
@@ -41,23 +42,23 @@ pub async fn fetch_match_summaries(
     .await
 }
 
-// const PLAYER_SUGGESTIONS: &str = include_str!("../graphql/player_suggestion_query.graphql");
-//
-// pub async fn player_suggestiosn(
-//     name: Arc<String>,
-//     client: &reqwest::Client,
-// ) -> Result<structs::PlayerSuggestions, reqwest::Error> {
-//     request(
-//         PLAYER_SUGGESTIONS,
-//         PlayerInfoSuggestions {
-//             query: name.to_lowercase(),
-//             region_id: "na1",
-//         },
-//         client,
-//         BASE_URL,
-//     )
-//     .await
-// }
+const PLAYER_SUGGESTIONS: &str = include_str!("../graphql/player_suggestion_query.graphql");
+
+pub async fn player_suggestiosn(
+    name: Arc<String>,
+    client: &reqwest::Client,
+) -> Result<structs::PlayerSuggestions, reqwest::Error> {
+    request(
+        PLAYER_SUGGESTIONS,
+        PlayerInfoSuggestions {
+            query: name.to_lowercase(),
+            region_id: "na1",
+        },
+        client,
+        BASE_URL,
+    )
+    .await
+}
 
 const UPDATE_PLAYER: &str = include_str!("../graphql/update_profile_query.graphql");
 
@@ -166,13 +167,17 @@ async fn request<Vars: Serialize, Data: for<'de> Deserialize<'de>>(
     client: &reqwest::Client,
     url: &str,
 ) -> Result<Data, reqwest::Error> {
-    client
+    let res = client
         .post(url)
         .json(&GQLQuery { variables, query })
         .send()
-        .await?
-        .json()
-        .await
+        .await?;
+
+    let value: serde_json::Value = res.json().await?;
+
+    println!("{}", value);
+
+    Ok(serde_json::from_value(value).unwrap())
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]

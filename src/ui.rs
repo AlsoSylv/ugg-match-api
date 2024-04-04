@@ -1,14 +1,13 @@
-use crate::structs::{self, ChampData, GetMatch, Match, MatchSummary, OverallRanking, RankScore};
-use crate::{spawn_gui_shit, Errors, SharedState};
+use crate::structs::{self, ChampData, GetMatch, Match, MatchSummary, OverallRanking, PlayerProfileSuggestions, PlayerSuggestions, RankScore};
+use crate::{spawn_gui_shit, Errors, SharedState, SHARED_STATE};
 use chrono::{DateTime, NaiveDateTime, Utc};
-use eframe::egui::{
-    self, Button, CentralPanel, ComboBox, Label, RichText, TextBuffer, TextEdit, Ui, Vec2,
-};
+use eframe::egui::{self, AboveOrBelow, Button, CentralPanel, ComboBox, Label, RichText, TextBuffer, TextEdit, Ui, Vec2};
 use eframe::epaint::Color32;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
+use egui_dropdown::DropDownBox;
 use tokio::runtime::Runtime;
 
 #[derive(Debug)]
@@ -23,6 +22,7 @@ pub enum Results {
     ChampJson(Errors),
     ChampImage(Errors),
     MatchDetails(Result<(Box<GetMatch>, i64), Errors>),
+    PlayerSuggestions(Result<structs::PlayerSuggestions, Errors>)
 }
 
 #[derive(Debug)]
@@ -64,6 +64,9 @@ pub enum Payload {
         id: i64,
         region_id: &'static str,
     },
+    GetPlayerSuggestions {
+        name: Arc<String>,
+    }
 }
 
 pub struct MyEguiApp {
@@ -71,12 +74,12 @@ pub struct MyEguiApp {
     pub receiver: async_channel::Receiver<Results>,
 
     // The state shared between all worker threads and the main GUI thread
-    pub shared_state: Option<Arc<SharedState>>,
+    pub shared_state: &'static SharedState,
 
     // Actively tracked state of GUI components
     pub refresh_enabled: bool,
     pub update_enabled: bool,
-    pub finished_match_summeries: bool,
+    pub finished_match_summaries: bool,
     pub page: u8,
     pub role: u8,
 
@@ -87,6 +90,7 @@ pub struct MyEguiApp {
 
     // These three are loaded lazily, and may or may not exist!
     pub player_data: PlayerData,
+    pub player_suggestions: PlayerSuggestions,
 
     // Runtime so the threads don't close
     _rt: Runtime,
@@ -147,12 +151,12 @@ const UGG_ROLES_REVERSED: [&str; 8] =
 
 impl MyEguiApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let (_rt, sender, receiver, shared_state) = spawn_gui_shit(&_cc.egui_ctx);
+        let (_rt, sender, receiver) = spawn_gui_shit(&_cc.egui_ctx);
 
         Self {
             active_player: Default::default(),
             message_name: Default::default(),
-            shared_state: Some(shared_state),
+            shared_state: &SHARED_STATE,
             role: 5,
             refresh_enabled: false,
             update_enabled: false,
@@ -172,7 +176,12 @@ impl MyEguiApp {
             messenger: sender,
             receiver,
             page: 1,
-            finished_match_summeries: true,
+            finished_match_summaries: true,
+            player_suggestions: PlayerSuggestions {
+                data: PlayerProfileSuggestions {
+                    player_profile_suggestions: vec![],
+                }
+            },
             _rt,
         }
     }
@@ -201,123 +210,7 @@ impl MyEguiApp {
         self.player_data.rank_scores = None;
         self.player_data.ranking = None;
         self.page = 1;
-        self.finished_match_summeries = true;
-    }
-}
-
-fn custom_window_frame(
-    ctx: &egui::Context,
-    frame: &mut eframe::Frame,
-    title: &str,
-    add_contents: impl FnOnce(&mut egui::Ui),
-) {
-    let window_frame = egui::Frame {
-        fill: ctx.style().visuals.window_fill(),
-        rounding: 15.0.into(),
-        stroke: ctx.style().visuals.widgets.noninteractive.fg_stroke,
-        outer_margin: 0.5.into(),
-        ..Default::default()
-    };
-
-    CentralPanel::default().frame(window_frame).show(ctx, |ui| {
-        let app_rect = ui.max_rect();
-
-        const TITLE_BAR_HEIGHT: f32 = 32.0;
-        let title_bar_rect = {
-            let mut rect = app_rect;
-            rect.max.y = rect.min.y + TITLE_BAR_HEIGHT;
-            rect
-        };
-        title_bar_ui(ui, frame, title_bar_rect, title);
-
-        let content_rect = {
-            let mut rect = app_rect;
-            rect.min.y = title_bar_rect.max.y;
-            rect
-        }
-        .shrink(4.0);
-
-        let mut content_ui = ui.child_ui(content_rect, *ui.layout());
-        add_contents(&mut content_ui);
-    });
-}
-
-fn title_bar_ui(
-    ui: &mut egui::Ui,
-    frame: &mut eframe::Frame,
-    title_bar_rect: eframe::epaint::Rect,
-    title: &str,
-) {
-    use egui::*;
-
-    let painter = ui.painter();
-
-    let title_bar_response = ui.interact(title_bar_rect, Id::new("title_bar"), Sense::click());
-
-    // Paint the title:
-    painter.text(
-        title_bar_rect.center(),
-        Align2::CENTER_CENTER,
-        title,
-        FontId::proportional(20.0),
-        ui.style().visuals.text_color(),
-    );
-
-    // Paint the line under the title:
-    painter.line_segment(
-        [
-            title_bar_rect.left_bottom() + vec2(1.0, 0.0),
-            title_bar_rect.right_bottom() + vec2(-1.0, 0.0),
-        ],
-        ui.visuals().widgets.noninteractive.bg_stroke,
-    );
-
-    // Interact with the title bar (drag to move window):
-    if title_bar_response.double_clicked() {
-        frame.set_maximized(!frame.info().window_info.maximized);
-    } else if title_bar_response.is_pointer_button_down_on() {
-        frame.drag_window();
-    }
-
-    ui.allocate_ui_at_rect(title_bar_rect, |ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            ui.visuals_mut().button_frame = false;
-            ui.add_space(8.0);
-            close_maximize_minimize(ui, frame);
-        });
-    });
-}
-
-fn close_maximize_minimize(ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-    let button_height = 12.0;
-
-    let close_response = ui
-        .add(Button::new(RichText::new("❌").size(button_height)))
-        .on_hover_text("Close the window");
-    if close_response.clicked() {
-        frame.close();
-    }
-
-    let maximized = frame.info().window_info.maximized;
-
-    let button = ui
-        .add(Button::new(RichText::new("🗗").size(button_height)))
-        .on_hover_text(if maximized {
-            "Restore window"
-        } else {
-            "Maximize window"
-        });
-
-    if button.clicked() {
-        frame.set_maximized(!maximized);
-    }
-
-    let minimized_response = ui
-        .add(Button::new(RichText::new("🗕").size(button_height)))
-        .on_hover_text("Minimize the window");
-    if minimized_response.clicked() {
-        frame.set_minimized(true);
+        self.finished_match_summaries = true;
     }
 }
 
@@ -327,10 +220,7 @@ impl eframe::App for MyEguiApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        frame.set_decorations(false);
-        let shared_state = self.shared_state.take().unwrap();
-
-        custom_window_frame(ctx, frame, "Hell", |ui| {
+        egui::CentralPanel::default().show(ctx, |ui| {
             if !self.active_player.is_empty() {
                 self.refresh_enabled = true;
                 self.update_enabled = true;
@@ -339,7 +229,7 @@ impl eframe::App for MyEguiApp {
                 self.update_enabled = false;
             };
 
-            let Some(versions) = shared_state.versions.get() else {
+            let Some(versions) = self.shared_state.versions.get() else {
                 self.load_version(ctx);
                 egui::CentralPanel::default().show_inside(ui, |ui| {
                     ui.spinner();
@@ -348,7 +238,7 @@ impl eframe::App for MyEguiApp {
                 return;
             };
 
-            let Some(champs) = shared_state.champs.get() else {
+            let Some(champs) = self.shared_state.champs.get() else {
                 if !self.data_dragon.champ_info_started {
                     self.send_message(Payload::GetChampInfo {
                         url: format!(
@@ -366,7 +256,7 @@ impl eframe::App for MyEguiApp {
                 return;
             };
 
-            self.update_data(&versions, &champs);
+            self.update_data(versions, champs);
 
             egui::SidePanel::left("Left Panel")
                 // 15% of available width
@@ -383,8 +273,25 @@ impl eframe::App for MyEguiApp {
                             let active_player = &mut self.active_player;
                             let search_bar = TextEdit::singleline(active_player);
 
-                            let search_bar =
+                            let mut search_bar =
                                 ui.add_sized(Vec2::new(ui.available_width(), 0.0), search_bar);
+
+                            search_bar.sense.focusable = true;
+                            let id = "player_suggestions".into();
+
+                            if search_bar.has_focus() {
+                                ui.memory_mut(|mem| mem.open_popup(id));
+                                egui::popup_below_widget(ui, id, &search_bar, |ui| {
+                                    for x in &self.player_suggestions.data.player_profile_suggestions {
+                                        let label = ui.selectable_label(false, &x.riot_user_name);
+                                        if label.clicked() {
+                                            *active_player = x.riot_user_name.clone();
+                                        }
+                                    }
+                                });
+                            } else {
+                                ui.memory_mut(|mem| mem.close_popup());
+                            }
 
                             if search_bar.clicked()
                                 && !active_player.ends_with(' ')
@@ -396,6 +303,7 @@ impl eframe::App for MyEguiApp {
 
                             if search_bar.changed() {
                                 self.zero_player();
+                                self.send_message(Payload::GetPlayerSuggestions { name: Arc::new(self.active_player.clone()) })
                             }
                         },
                     );
@@ -420,7 +328,7 @@ impl eframe::App for MyEguiApp {
 
                             let button = egui::Button::new("➡").min_size(Vec2::new(third, 0.0));
                             if ui
-                                .add_enabled(!self.finished_match_summeries, button)
+                                .add_enabled(!self.finished_match_summaries, button)
                                 .clicked()
                             {
                                 self.page += 1;
@@ -490,9 +398,9 @@ impl eframe::App for MyEguiApp {
                 egui::TopBottomPanel::top("Top Panel").show_inside(ui, |ui| {
                     ui.horizontal(|ui| {
                         if self.player_data.icon_id != -1 {
-                            if let Ok(map) = shared_state.player_icons.try_read() {
+                            if let Ok(map) = self.shared_state.player_icons.try_read() {
                                 if let Some(texture) = map.get(&self.player_data.icon_id) {
-                                    ui.image(texture, Vec2::splat(0.1 * height));
+                                    ui.image(texture);
                                 } else {
                                     ui.spinner();
                                 }
@@ -563,7 +471,7 @@ impl eframe::App for MyEguiApp {
                                 .show_header(ui, |ui| {
                                     if let Ok(image) = &champ.image.try_read() {
                                         if let Some(texture) = &**image {
-                                            ui.image(texture, Vec2::splat(0.08 * height));
+                                            ui.image(texture);
                                         } else {
                                             ui.spinner();
                                         }
@@ -639,8 +547,6 @@ impl eframe::App for MyEguiApp {
                     }
                 });
         });
-
-        self.shared_state = Some(shared_state);
     }
 }
 

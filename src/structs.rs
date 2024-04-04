@@ -18,8 +18,6 @@ pub struct Data {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchPlayerMatchSummaries {
-    // Says if we're on the last page or not
-    pub finished_match_summaries: bool,
     // The match summeries for that page
     pub match_summaries: Box<[MatchSummary]>,
 }
@@ -105,7 +103,7 @@ pub struct RankData {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchProfileRanks {
-    pub rank_scores: Vec<RankScore>,
+    pub rank_scores: Box<[RankScore]>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -139,8 +137,8 @@ pub struct RankingData {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OverallRanking {
-    pub overall_ranking: i64,
-    pub total_player_count: i64,
+    pub overall_ranking: u32,
+    pub total_player_count: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -290,4 +288,53 @@ pub struct MatchTeam {
     pub role: u8,
     pub summoner_name: String,
     pub team_id: i64,
+}
+
+/// Deserialize Player Suggestions
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerSuggestions {
+    pub data: PlayerProfileSuggestions,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerProfileSuggestions {
+    pub player_profile_suggestions: Vec<PlayerInfoSuggestion>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerInfoSuggestion {
+    // #[serde(rename = "__typename")]
+    // pub typename: String,
+    pub icon_id: i64,
+    pub summoner_level: i64,
+    pub riot_user_name: String,
+    pub riot_tag_line: String,
+}
+
+pub struct PlayerProfileSuggestionsIter<'a> {
+    pub player_profile_suggestions: &'a [PlayerInfoSuggestion],
+    cursor: usize,
+}
+
+impl<'a> Iterator for PlayerProfileSuggestionsIter<'a> {
+    type Item = &'a String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.player_profile_suggestions.get(self.cursor).map(|suggestions| &suggestions.riot_user_name)
+    }
+}
+
+impl<'a> IntoIterator for &'a PlayerProfileSuggestions {
+    type Item = &'a String;
+    type IntoIter = PlayerProfileSuggestionsIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        PlayerProfileSuggestionsIter {
+            player_profile_suggestions: &self.player_profile_suggestions,
+            cursor: 0,
+        }
+    }
 }

@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::{Arc, OnceLock, RwLock};
+use std::{
+    collections::BTreeMap,
+    sync::{OnceLock, RwLock},
+};
 
 use async_channel::{Receiver, Sender};
 use bytes::Bytes;
@@ -33,19 +36,19 @@ pub struct SharedState {
     // This is initilized once, and because of the way the GUI is setup, will always be there afterwards
     champs: OnceLock<HashMap<i64, Champ>>,
     versions: OnceLock<Box<[String]>>,
-    player_icons: RwLock<HashMap<i16, TextureHandle>>,
+    player_icons: RwLock<BTreeMap<i16, TextureHandle>>,
 }
 
 impl SharedState {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             champs: OnceLock::new(),
             versions: OnceLock::new(),
-            player_icons: RwLock::new(HashMap::new()),
+            player_icons: RwLock::new(BTreeMap::new()),
         }
     }
 
-    async fn update_champ_image(&self, champ_id: i64, texture: eframe::egui::TextureHandle) {
+    fn update_champ_image(&self, champ_id: i64, texture: eframe::egui::TextureHandle) {
         let map = self.champs.get().unwrap();
         let handle = map
             .get(&champ_id)
@@ -54,6 +57,8 @@ impl SharedState {
         *write = Some(texture);
     }
 }
+
+static SHARED_STATE: SharedState = SharedState::new();
 
 #[derive(Clone)]
 struct ThreadState {
@@ -74,14 +79,7 @@ async fn message_sender(
 
 pub fn spawn_gui_shit(
     _ctx: &eframe::egui::Context,
-) -> (
-    Runtime,
-    Sender<Payload>,
-    Receiver<Results>,
-    Arc<SharedState>,
-) {
-    let shared_state = Arc::new(SharedState::new());
-
+) -> (Runtime, Sender<Payload>, Receiver<Results>) {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
         .enable_all()
@@ -101,7 +99,7 @@ pub fn spawn_gui_shit(
 
     let runtime_loop = || {
         let state = state.clone();
-        let shared_state = shared_state.clone();
+        let shared_state = &SHARED_STATE;
 
         async move {
             while let Ok(message) = state.receiver.recv().await {
@@ -183,11 +181,8 @@ pub fn spawn_gui_shit(
                                             ColorImage::from_rgb([x, y], &buf),
                                             TextureOptions::LINEAR,
                                         );
-                                        let _ = shared_state
-                                            .player_icons
-                                            .write()
-                                            .unwrap()
-                                            .insert(info.icon_id, texture);
+                                        let mut map = shared_state.player_icons.write().unwrap();
+                                        map.insert(info.icon_id, texture);
                                     }
                                     Err(err) => {
                                         let wrapped = Results::PlayerIcon(Errors::Request(err));
@@ -316,7 +311,7 @@ pub fn spawn_gui_shit(
                             TextureOptions::LINEAR,
                         );
 
-                        shared_state.update_champ_image(id, texture).await;
+                        shared_state.update_champ_image(id, texture);
                     }
                     ui::Payload::GetMatchDetails {
                         name,
@@ -336,6 +331,10 @@ pub fn spawn_gui_shit(
                         .map_err(Errors::Request);
                         message_sender(Results::MatchDetails(res), &state.ctx, &state.sender).await;
                     }
+                    ui::Payload::GetPlayerSuggestions { name } => {
+                        let res = networking::player_suggestiosn(name, &state.client).await.map_err(Errors::Request);
+                        message_sender(Results::PlayerSuggestions(res), &state.ctx, &state.sender).await;
+                    }
                 };
             }
         }
@@ -346,30 +345,8 @@ pub fn spawn_gui_shit(
     runtime.spawn(runtime_loop());
     runtime.spawn(runtime_loop());
 
-    (runtime, gui_sender, gui_receiver, shared_state.clone())
+    (runtime, gui_sender, gui_receiver)
 }
-
-// Note: This is unsused because the searchbar is broken, but I'm hoping it gets fixed one day
-// fn player_suggestions(
-//     name: Arc<String>,
-//     tx: Sender<Results>,
-//     ctx: egui::Context,
-//     client: reqwest::Client,
-// ) {
-//     tokio::spawn(async move {
-//         let request = networking::player_suggestiosn(name, &state.client).await;
-//         match request {
-//             Ok(response) => {
-//                 // let _ = tx.send(Results::PlayerSuggestions(Ok(response)));
-//                 ctx.request_repaint();
-//             }
-//             Err(error) => {
-//                 // let _ = tx.send(Results::PlayerSuggestions(Err(Errors::Request(error))));
-//                 ctx.request_repaint();
-//             }
-//         }
-//     });
-// }
 
 async fn get_icon(
     id: i16,
