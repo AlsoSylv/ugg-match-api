@@ -1,22 +1,27 @@
 query FetchMatchSummaries(
-    $championId: [Int], 
-    $page: Int, 
-    $queueType: [Int], 
-    $duoName: String, 
-    $regionId: String!, 
-    $role: [Int], 
-    $seasonIds: [Int]!, 
-    $summonerName: String!
+    $regionId: String!,
+    $seasonIds: [Int]!,
+    $riotUserName: String!
+    $riotTagLine: String!
+    $duoRiotUserName: String,
+    $duoRiotTagLine: String,
+    $championId: [Int],
+    $page: Int,
+    $queueType: [Int],
+    $role: [Int],
 ) {
 fetchPlayerMatchSummaries(
+    regionId: $regionId
+    seasonIds: $seasonIds
+    riotUserName: $riotUserName
+    riotTagLine: $riotTagLine
+    duoRiotUserName: $duoRiotUserName
+    duoRiotTagLine: $duoRiotTagLine
     championId: $championId
     page: $page
     queueType: $queueType
-    duoName: $duoName
-    regionId: $regionId
     role: $role
-    seasonIds: $seasonIds
-    summonerName: $summonerName) {
+) {
         finishedMatchSummaries
         totalNumMatches
         matchSummaries {
@@ -41,7 +46,8 @@ fetchPlayerMatchSummaries(
             role
             runes
             subStyle
-            summonerName
+            riotTagLine
+            riotUserName
             summonerSpells
             psHardCarry
             psTeamPlay
@@ -59,7 +65,8 @@ fetchPlayerMatchSummaries(
             }
             teamA {
                 championId
-                summonerName
+                riotUserName
+                riotTagLine
                 teamId
                 role
                 hardCarry
@@ -68,7 +75,8 @@ fetchPlayerMatchSummaries(
             }
             teamB {
                 championId
-                summonerName
+                riotUserName
+                riotTagLine
                 teamId
                 role
                 hardCarry

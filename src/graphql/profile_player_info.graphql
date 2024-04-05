@@ -1,7 +1,28 @@
-query ProfilePlayerInfo($summonerName: String!, $regionId: String!) {
-    profilePlayerInfo(regionId: $regionId, summonerName: $summonerName) {
-        iconId
-        summonerLevel
-        summonerName
+query getSummonerProfile($regionId: String!, $seasonId: Int!, $riotUserName: String!, $riotTagLine: String!) {
+    fetchProfileRanks(regionId: $regionId, riotUserName: $riotUserName, riotTagLine: $riotTagLine, seasonId: $seasonId) {
+        rankScores  {
+            losses
+            lp
+            promoProgress
+            queueType
+            rank
+            role
+            seasonId
+            tier
+            wins
+            # typename
+        }
+    }
+    profileInitSimple(regionId: $regionId, riotUserName: $riotUserName, riotTagLine: $riotTagLine) {
+        lastModified
+        playerInfo {
+            iconId
+            regionId
+            summonerLevel
+            riotUserName
+            riotTagLine
+            # typename
+        }
+        # customizationData {\n      headerBg\n      typename\n    }\n    __typename\n  }
     }
 }

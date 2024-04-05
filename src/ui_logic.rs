@@ -23,23 +23,26 @@ impl ui::MyEguiApp {
         self.messenger.try_send(payload).unwrap();
     }
 
-    pub fn update_matches(&self, name: &Arc<String>) {
+    pub fn update_matches(&self, name: &Arc<String>, tag_line: &Arc<String>) {
+        // These need to be disabled for now
         self.send_message(Payload::MatchSummaries {
             name: name.clone(),
+            tag_line: tag_line.clone(),
             roles: get_role_index(self.role),
             region_id: self.data_dragon.region,
             page: self.page,
         });
-        self.send_message(Payload::PlayerRanks {
-            name: name.clone(),
-            region_id: self.data_dragon.region,
-        });
-        self.send_message(Payload::PlayerRanking {
-            name: name.clone(),
-            region_id: self.data_dragon.region,
-        });
+        // self.send_message(Payload::PlayerRanks {
+        //     name: name.clone(),
+        //     region_id: self.data_dragon.region,
+        // });
+        // self.send_message(Payload::PlayerRanking {
+        //     name: name.clone(),
+        //     region_id: self.data_dragon.region,
+        // });
         self.send_message(Payload::PlayerInfo {
             name: name.clone(),
+            tag_line: tag_line.clone(),
             version_index: 0,
             region_id: self.data_dragon.region,
         });
@@ -56,7 +59,7 @@ impl ui::MyEguiApp {
                         summaries.iter_mut().for_each(|summary| {
                             if self.player_data.match_data_map.get(&summary.match_id).is_none() {
                                 self.player_data.match_data_map.insert(summary.match_id, None);
-                                self.send_message(Payload::GetMatchDetails { name: self.message_name.clone(), version: summary.version.take(), id: summary.match_id, region_id: self.data_dragon.region });
+                                // self.send_message(Payload::GetMatchDetails { name: self.riot_user_name.clone(), version: summary.version.take(), id: summary.match_id, region_id: self.data_dragon.region });
                             }
 
                             let champ = &champs[&summary.champion_id];
@@ -65,7 +68,7 @@ impl ui::MyEguiApp {
                                 self.send_message(
                                     Payload::GetChampImage {
                                         url: format!(
-                                            "http://ddragon.leagueoflegends.com/cdn/{}/img/champion/{}.png",
+                                            "https://ddragon.leagueoflegends.com/cdn/{}/img/champion/{}.png",
                                             versions[0], key
                                         ),
                                         id: summary.champion_id,
@@ -84,32 +87,10 @@ impl ui::MyEguiApp {
                     Ok(updated) => {
                         let data = updated.data.update_player_profile;
                         if data.success {
-                            self.update_matches(&self.message_name);
+                            self.update_matches(&self.riot_user_name, &self.riot_user_name);
                         } else {
                             dbg!("{:?}", data.error_reason);
                         }
-                    }
-                    Err(err) => {
-                        dbg!("{:?}", err);
-                    }
-                },
-                Results::ProfileRanks(rank) => match rank {
-                    Ok(rank) => {
-                        let data: Vec<RankScore> = rank
-                            .data
-                            .fetch_profile_ranks
-                            .rank_scores
-                            .into_vec()
-                            .into_iter()
-                            .filter_map(|val| {
-                                if val.queue_type.is_empty() {
-                                    None
-                                } else {
-                                    Some(val)
-                                }
-                            })
-                            .collect();
-                        self.player_data.rank_scores = Some(data.into());
                     }
                     Err(err) => {
                         dbg!("{:?}", err);
@@ -125,10 +106,27 @@ impl ui::MyEguiApp {
                 },
                 // Todo: Display this info
                 Results::PlayerInfo(info) => match info {
-                    Ok(info) => {
-                        let info = info.data.profile_player_info.unwrap();
-                        if info.summoner_name.as_ref() == self.message_name.as_str() {
-                            self.player_data.icon_id = info.icon_id;
+                    Ok(data) => {
+                        let info = data.data.profile_init_simple.unwrap();
+                        let rank = data.data.fetch_profile_ranks.unwrap();
+                        if info.player_info.riot_user_name.as_str() == self.riot_user_name.as_str()
+                            && info.player_info.riot_tag_line.as_str()
+                                == self.riot_tag_line.as_str()
+                        {
+                            self.player_data.icon_id = info.player_info.icon_id;
+                            let data: Vec<RankScore> = rank
+                                .rank_scores
+                                .into_vec()
+                                .into_iter()
+                                .filter_map(|val| {
+                                    if val.queue_type.is_empty() {
+                                        None
+                                    } else {
+                                        Some(val)
+                                    }
+                                })
+                                .collect();
+                            self.player_data.rank_scores = Some(data.into());
                         }
                     }
                     Err(err) => {
@@ -141,7 +139,7 @@ impl ui::MyEguiApp {
                 Results::ChampImage(image_errors) => {
                     todo!("{:?}", image_errors)
                 }
-                Results::MatchDetails(deets) => match deets {
+                Results::MatchDetails(result) => match result {
                     Ok((match_details, id)) => {
                         self.player_data
                             .match_data_map
@@ -157,12 +155,9 @@ impl ui::MyEguiApp {
                 }
 
                 Results::PlayerSuggestions(result) => match result {
-                    Ok(suggestions) => {
-                        println!("Hit!");
-                        self.player_suggestions = suggestions
-                    }
-                    Err(e) => todo!("{:?}", e)
-                }
+                    Ok(suggestions) => self.player_suggestions = suggestions,
+                    Err(e) => todo!("{:?}", e),
+                },
 
                 payload => unreachable!(
                     "App has reached an impossible state, this should already be covered {:?}",

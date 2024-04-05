@@ -9,15 +9,17 @@ pub struct PlayerInfoSuggestions {
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FetchMatchSummaries {
-    pub champion_id: Vec<i64>,
-    pub page: i64,
+pub struct FetchMatchSummaries<'s> {
+    pub riot_user_name: Arc<String>,
+    pub riot_tag_line: &'s str,
+    pub duo_riot_user_name: &'s str,
+    pub duo_riot_tag_line: &'s str,
     pub queue_type: Vec<i64>,
-    pub duo_name: String,
     pub region_id: &'static str,
     pub role: Vec<u8>,
     pub season_ids: Vec<i32>,
-    pub summoner_name: Arc<String>,
+    pub champion_id: Vec<i64>,
+    pub page: i64,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -45,9 +47,11 @@ pub struct GetOverallPlayerRanking {
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FetchProfilePlayerInfo {
+pub struct GetSummonerProfile {
     pub region_id: &'static str,
-    pub summoner_name: Arc<String>,
+    pub riot_user_name: Arc<String>,
+    pub riot_tag_line: Arc<String>,
+    pub season_id: i32,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]

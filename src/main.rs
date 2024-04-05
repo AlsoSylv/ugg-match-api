@@ -33,7 +33,7 @@ fn main() {
 }
 
 pub struct SharedState {
-    // This is initilized once, and because of the way the GUI is setup, will always be there afterwards
+    // This is initialized once, and because of the way the GUI is set up, will always be there afterward
     champs: OnceLock<HashMap<i64, Champ>>,
     versions: OnceLock<Box<[String]>>,
     player_icons: RwLock<BTreeMap<i16, TextureHandle>>,
@@ -48,7 +48,7 @@ impl SharedState {
         }
     }
 
-    fn update_champ_image(&self, champ_id: i64, texture: eframe::egui::TextureHandle) {
+    fn update_champ_image(&self, champ_id: i64, texture: TextureHandle) {
         let map = self.champs.get().unwrap();
         let handle = map
             .get(&champ_id)
@@ -104,14 +104,16 @@ pub fn spawn_gui_shit(
         async move {
             while let Ok(message) = state.receiver.recv().await {
                 match message {
-                    ui::Payload::MatchSummaries {
+                    Payload::MatchSummaries {
                         name,
+                        tag_line,
                         roles,
                         region_id,
                         page,
                     } => {
                         let request = networking::fetch_match_summaries(
                             name,
+                            &tag_line,
                             region_id,
                             roles.map_or_else(Vec::new, |role| vec![role]),
                             page as i64,
@@ -122,15 +124,7 @@ pub fn spawn_gui_shit(
 
                         message_sender(Results::MatchSum(request), &state.ctx, &state.sender).await;
                     }
-                    ui::Payload::PlayerRanks { name, region_id } => {
-                        let request = networking::profile_ranks(name, &state.client, region_id)
-                            .await
-                            .map_err(Errors::Request);
-
-                        message_sender(Results::ProfileRanks(request), &state.ctx, &state.sender)
-                            .await;
-                    }
-                    ui::Payload::UpdatePlayer { name, region_id } => {
+                    Payload::UpdatePlayer { name, region_id } => {
                         let request = networking::update_player(name, &state.client, region_id)
                             .await
                             .map_err(Errors::Request);
@@ -138,24 +132,26 @@ pub fn spawn_gui_shit(
                         message_sender(Results::PlayerUpdate(request), &state.ctx, &state.sender)
                             .await;
                     }
-                    ui::Payload::PlayerRanking { name, region_id } => {
+                    Payload::PlayerRanking { name, region_id } => {
                         let request = networking::player_ranking(name, &state.client, region_id)
                             .await
                             .map_err(Errors::Request);
 
                         message_sender(Results::Ranking(request), &state.ctx, &state.sender).await;
                     }
-                    ui::Payload::PlayerInfo {
+                    Payload::PlayerInfo {
                         name,
+                        tag_line,
                         version_index,
                         region_id,
                     } => {
-                        let val = networking::player_info(name, region_id, &state.client).await;
+                        let val =
+                            networking::player_info(name, tag_line, region_id, &state.client).await;
 
                         if let Ok(info) = &val {
-                            if let Some(info) = &info.data.profile_player_info {
+                            if let Some(info) = &info.data.profile_init_simple {
                                 let res = get_icon(
-                                    info.icon_id,
+                                    info.player_info.icon_id,
                                     &shared_state.versions.get().unwrap()[version_index],
                                     &state.client,
                                 )
@@ -182,7 +178,7 @@ pub fn spawn_gui_shit(
                                             TextureOptions::LINEAR,
                                         );
                                         let mut map = shared_state.player_icons.write().unwrap();
-                                        map.insert(info.icon_id, texture);
+                                        map.insert(info.player_info.icon_id, texture);
                                     }
                                     Err(err) => {
                                         let wrapped = Results::PlayerIcon(Errors::Request(err));
@@ -199,7 +195,7 @@ pub fn spawn_gui_shit(
                         )
                         .await;
                     }
-                    ui::Payload::GetVersions => {
+                    Payload::GetVersions => {
                         let res = state
                             .client
                             .get("https://ddragon.leagueoflegends.com/api/versions.json")
@@ -225,11 +221,11 @@ pub fn spawn_gui_shit(
                             }
                         };
                     }
-                    ui::Payload::GetChampInfo { url } => {
+                    Payload::GetChampInfo { url } => {
                         let res = state.client.get(url).send().await;
 
-                        let res = match res {
-                            Ok(res) => res,
+                        let json = match res {
+                            Ok(res) => res.json().await,
                             Err(err) => {
                                 message_sender(
                                     Results::ChampJson(Errors::Request(err)),
@@ -240,9 +236,7 @@ pub fn spawn_gui_shit(
                                 continue;
                             }
                         };
-
-                        let json = res.json::<ChampionJson>().await;
-                        let json = match json {
+                        let json: ChampionJson = match json {
                             Ok(json) => json,
                             Err(err) => {
                                 message_sender(
@@ -262,7 +256,7 @@ pub fn spawn_gui_shit(
                         }
                         shared_state.champs.get_or_init(|| champs);
                     }
-                    ui::Payload::GetChampImage { url, id } => {
+                    Payload::GetChampImage { url, id } => {
                         let res = state.client.get(url).send().await;
                         let res = match res {
                             Ok(res) => res,
@@ -313,7 +307,7 @@ pub fn spawn_gui_shit(
 
                         shared_state.update_champ_image(id, texture);
                     }
-                    ui::Payload::GetMatchDetails {
+                    Payload::GetMatchDetails {
                         name,
                         id,
                         region_id,
@@ -331,9 +325,12 @@ pub fn spawn_gui_shit(
                         .map_err(Errors::Request);
                         message_sender(Results::MatchDetails(res), &state.ctx, &state.sender).await;
                     }
-                    ui::Payload::GetPlayerSuggestions { name } => {
-                        let res = networking::player_suggestiosn(name, &state.client).await.map_err(Errors::Request);
-                        message_sender(Results::PlayerSuggestions(res), &state.ctx, &state.sender).await;
+                    Payload::GetPlayerSuggestions { name } => {
+                        let res = networking::player_suggestions(name, &state.client)
+                            .await
+                            .map_err(Errors::Request);
+                        message_sender(Results::PlayerSuggestions(res), &state.ctx, &state.sender)
+                            .await;
                     }
                 };
             }
@@ -348,6 +345,7 @@ pub fn spawn_gui_shit(
     (runtime, gui_sender, gui_receiver)
 }
 
+//noinspection SpellCheckingInspection
 async fn get_icon(
     id: i16,
     version: &str,
@@ -355,7 +353,7 @@ async fn get_icon(
 ) -> Result<Bytes, reqwest::Error> {
     let res = client
         .get(format!(
-            "http://ddragon.leagueoflegends.com/cdn/{version}/img/profileicon/{id}.png"
+            "https://ddragon.leagueoflegends.com/cdn/{version}/img/profileicon/{id}.png"
         ))
         .send()
         .await?;

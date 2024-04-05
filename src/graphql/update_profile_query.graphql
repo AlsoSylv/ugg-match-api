@@ -1,5 +1,5 @@
-query UpdatePlayerProfile($regionId: String!, $summonerName: String!) {
-  updatePlayerProfile(regionId: $regionId, summonerName: $summonerName) {
+query UpdatePlayerProfile($regionId: String!, $riotUserName: String!, $riotTagLine: String!) {
+  updatePlayerProfile(regionId: $regionId, riotUserName: $riotUserName, riotTagLine: $riotTagLine) {
     errorReason
     success
   }

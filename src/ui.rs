@@ -1,20 +1,23 @@
-use crate::structs::{self, ChampData, GetMatch, Match, MatchSummary, OverallRanking, PlayerProfileSuggestions, PlayerSuggestions, RankScore};
+use crate::structs::{
+    self, ChampData, GetMatch, Match, MatchSummary, OverallRanking, PlayerProfileSuggestions,
+    PlayerSuggestions, RankScore,
+};
 use crate::{spawn_gui_shit, Errors, SharedState, SHARED_STATE};
 use chrono::{DateTime, NaiveDateTime, Utc};
-use eframe::egui::{self, AboveOrBelow, Button, CentralPanel, ComboBox, Label, RichText, TextBuffer, TextEdit, Ui, Vec2};
+use eframe::egui::{
+    self, Button, ComboBox, Image, Label, RichText, TextBuffer, TextEdit, Ui, Vec2,
+};
 use eframe::epaint::Color32;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
-use egui_dropdown::DropDownBox;
 use tokio::runtime::Runtime;
 
 #[derive(Debug)]
 pub enum Results {
-    MatchSum(Result<structs::PlayerMatchSummeries, Errors>),
+    MatchSum(Result<structs::PlayerMatchSummaries, Errors>),
     PlayerUpdate(Result<structs::UpdatePlayer, Errors>),
-    ProfileRanks(Result<structs::PlayerRank, Errors>),
     Ranking(Result<structs::PlayerRanking, Errors>),
     PlayerInfo(Result<structs::PlayerInfo, Errors>),
     PlayerIcon(Errors),
@@ -22,19 +25,16 @@ pub enum Results {
     ChampJson(Errors),
     ChampImage(Errors),
     MatchDetails(Result<(Box<GetMatch>, i64), Errors>),
-    PlayerSuggestions(Result<structs::PlayerSuggestions, Errors>)
+    PlayerSuggestions(Result<PlayerSuggestions, Errors>),
 }
 
 #[derive(Debug)]
 pub enum Payload {
     MatchSummaries {
         name: Arc<String>,
+        tag_line: Arc<String>,
         roles: Option<u8>,
         page: u8,
-        region_id: &'static str,
-    },
-    PlayerRanks {
-        name: Arc<String>,
         region_id: &'static str,
     },
     UpdatePlayer {
@@ -47,6 +47,7 @@ pub enum Payload {
     },
     PlayerInfo {
         name: Arc<String>,
+        tag_line: Arc<String>,
         version_index: usize,
         region_id: &'static str,
     },
@@ -66,7 +67,7 @@ pub enum Payload {
     },
     GetPlayerSuggestions {
         name: Arc<String>,
-    }
+    },
 }
 
 pub struct MyEguiApp {
@@ -85,7 +86,8 @@ pub struct MyEguiApp {
 
     // Values used for data lookup
     pub active_player: String,
-    pub message_name: Arc<String>,
+    pub riot_user_name: Arc<String>,
+    pub riot_tag_line: Arc<String>,
     pub data_dragon: DataDragon,
 
     // These three are loaded lazily, and may or may not exist!
@@ -116,9 +118,9 @@ pub struct DataDragon {
 pub struct Champ {
     pub key: String,
     pub name: String,
-    // This is updated from the threadpool, and as such, can be locked
+    // This is updated from the thread pool, and as such, can be locked
     pub image: RwLock<Option<egui::TextureHandle>>,
-    // The champ struct is passed around a lot, but this allos me to only use
+    // The champ struct is passed around a lot, but this allows me to only use
     // .get() instead of .take() and .set() at the beginning and end of the loop
     pub image_started: AtomicBool,
 }
@@ -155,7 +157,8 @@ impl MyEguiApp {
 
         Self {
             active_player: Default::default(),
-            message_name: Default::default(),
+            riot_user_name: Default::default(),
+            riot_tag_line: Default::default(),
             shared_state: &SHARED_STATE,
             role: 5,
             refresh_enabled: false,
@@ -180,7 +183,7 @@ impl MyEguiApp {
             player_suggestions: PlayerSuggestions {
                 data: PlayerProfileSuggestions {
                     player_profile_suggestions: vec![],
-                }
+                },
             },
             _rt,
         }
@@ -188,7 +191,7 @@ impl MyEguiApp {
 
     fn update_player(&self) {
         self.send_message(Payload::UpdatePlayer {
-            name: self.message_name.clone(),
+            name: self.riot_user_name.clone(),
             region_id: self.data_dragon.region,
         });
     }
@@ -215,11 +218,7 @@ impl MyEguiApp {
 }
 
 impl eframe::App for MyEguiApp {
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        egui::Rgba::TRANSPARENT.to_array()
-    }
-
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             if !self.active_player.is_empty() {
                 self.refresh_enabled = true;
@@ -242,7 +241,7 @@ impl eframe::App for MyEguiApp {
                 if !self.data_dragon.champ_info_started {
                     self.send_message(Payload::GetChampInfo {
                         url: format!(
-                            "http://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json",
+                            "https://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json",
                             versions[0]
                         ),
                     });
@@ -270,8 +269,7 @@ impl eframe::App for MyEguiApp {
                         |ui| {
                             ui.label("Player: ");
 
-                            let active_player = &mut self.active_player;
-                            let search_bar = TextEdit::singleline(active_player);
+                            let search_bar = TextEdit::singleline(&mut self.active_player);
 
                             let mut search_bar =
                                 ui.add_sized(Vec2::new(ui.available_width(), 0.0), search_bar);
@@ -279,31 +277,45 @@ impl eframe::App for MyEguiApp {
                             search_bar.sense.focusable = true;
                             let id = "player_suggestions".into();
 
+                            egui::popup_below_widget(ui, id, &search_bar, |ui| {
+                                for x in &self.player_suggestions.data.player_profile_suggestions {
+                                    let mut label = ui.selectable_label(
+                                        false,
+                                        format!("{}#{}", x.riot_user_name, x.riot_tag_line),
+                                    );
+                                    label.sense.click = true;
+                                    if label.clicked() {
+                                        self.active_player = x.riot_user_name.clone();
+                                        self.riot_user_name = x.riot_user_name.clone().into();
+                                        self.riot_tag_line = x.riot_tag_line.clone().into();
+                                        self.update_matches(
+                                            &self.riot_user_name,
+                                            &self.riot_tag_line,
+                                        );
+                                        ui.memory_mut(|mem| mem.close_popup());
+                                    }
+                                }
+                            });
+
                             if search_bar.has_focus() {
                                 ui.memory_mut(|mem| mem.open_popup(id));
-                                egui::popup_below_widget(ui, id, &search_bar, |ui| {
-                                    for x in &self.player_suggestions.data.player_profile_suggestions {
-                                        let label = ui.selectable_label(false, &x.riot_user_name);
-                                        if label.clicked() {
-                                            *active_player = x.riot_user_name.clone();
-                                        }
-                                    }
-                                });
-                            } else {
-                                ui.memory_mut(|mem| mem.close_popup());
                             }
 
-                            if search_bar.clicked()
-                                && !active_player.ends_with(' ')
-                                && !self.active_player.is_empty()
-                            {
-                                self.message_name = Arc::new(self.active_player.clone());
-                                self.update_matches(&self.message_name);
-                            }
+                            // We're not doing this right now
+                            // if search_bar.clicked()
+                            //     && !active_player.ends_with(' ')
+                            //     && !self.active_player.is_empty()
+                            // {
+                            //     self.riot_user_name = Arc::new(self.active_player.clone());
+                            //     self.update_matches(&self.riot_user_name);
+                            // }
 
+                            // We need to update suggestions
                             if search_bar.changed() {
                                 self.zero_player();
-                                self.send_message(Payload::GetPlayerSuggestions { name: Arc::new(self.active_player.clone()) })
+                                self.send_message(Payload::GetPlayerSuggestions {
+                                    name: Arc::new(self.active_player.clone()),
+                                })
                             }
                         },
                     );
@@ -320,19 +332,19 @@ impl eframe::App for MyEguiApp {
                             let button = Button::new("⬅").min_size(Vec2::new(third, 0.0));
                             if ui.add_enabled(self.page > 1, button).clicked() {
                                 self.page -= 1;
-                                self.update_matches(&self.message_name)
+                                self.update_matches(&self.riot_user_name, &self.riot_tag_line)
                             }
 
                             let label = Label::new(format!("{}", self.page));
                             ui.add_sized(Vec2::new(ui.available_width() - third, 0.0), label);
 
-                            let button = egui::Button::new("➡").min_size(Vec2::new(third, 0.0));
+                            let button = Button::new("➡").min_size(Vec2::new(third, 0.0));
                             if ui
                                 .add_enabled(!self.finished_match_summaries, button)
                                 .clicked()
                             {
                                 self.page += 1;
-                                self.update_matches(&self.message_name)
+                                self.update_matches(&self.riot_user_name, &self.riot_tag_line)
                             }
                         },
                     );
@@ -356,7 +368,7 @@ impl eframe::App for MyEguiApp {
                     ui.horizontal(|ui| {
                         ui.label("Region: ");
 
-                        egui::ComboBox::from_id_source("regions")
+                        ComboBox::from_id_source("regions")
                             .selected_text(self.data_dragon.region_id_name[self.data_dragon.region])
                             .width(ui.available_width())
                             .show_ui(ui, |ui| {
@@ -378,7 +390,7 @@ impl eframe::App for MyEguiApp {
                     let button = Button::new("Refresh Player")
                         .min_size(Vec2::new(ui.available_width(), 0.0));
                     if ui.add_enabled(self.refresh_enabled, button).clicked() {
-                        self.update_matches(&self.message_name);
+                        self.update_matches(&self.riot_user_name, &self.riot_tag_line);
                     }
 
                     ui.add_space(0.01 * full_height);
@@ -400,7 +412,9 @@ impl eframe::App for MyEguiApp {
                         if self.player_data.icon_id != -1 {
                             if let Ok(map) = self.shared_state.player_icons.try_read() {
                                 if let Some(texture) = map.get(&self.player_data.icon_id) {
-                                    ui.image(texture);
+                                    ui.add(
+                                        Image::new(texture).max_size(Vec2::splat(0.08 * height)),
+                                    );
                                 } else {
                                     ui.spinner();
                                 }
@@ -456,11 +470,11 @@ impl eframe::App for MyEguiApp {
             egui::ScrollArea::vertical()
                 .max_height(ui.available_height())
                 .show(ui, |ui| {
-                    if let Some(summeries) = &self.player_data.match_summaries {
-                        if summeries.is_empty() {
+                    if let Some(summaries) = &self.player_data.match_summaries {
+                        if summaries.is_empty() {
                             ui.label("No Recent Matches");
                         } else {
-                            for summary in summeries.iter() {
+                            for summary in summaries.iter() {
                                 let champ = &champs[&summary.champion_id];
                                 ui.add_space(0.01 * height);
                                 let id = ui.make_persistent_id(summary.match_id);
@@ -471,7 +485,10 @@ impl eframe::App for MyEguiApp {
                                 .show_header(ui, |ui| {
                                     if let Ok(image) = &champ.image.try_read() {
                                         if let Some(texture) = &**image {
-                                            ui.image(texture);
+                                            ui.add(
+                                                Image::new(texture)
+                                                    .max_size(Vec2::splat(0.08 * height)),
+                                            );
                                         } else {
                                             ui.spinner();
                                         }
@@ -493,7 +510,7 @@ impl eframe::App for MyEguiApp {
 
                                         ui.horizontal(|ui| {
                                             if summary.win {
-                                                ui.label(RichText::new("Win").color(Color32::KHAKI))
+                                                ui.label(RichText::new("Win").color(Color32::BLUE))
                                             } else {
                                                 ui.label(RichText::new("Loss").color(Color32::RED))
                                             };
@@ -547,6 +564,10 @@ impl eframe::App for MyEguiApp {
                     }
                 });
         });
+    }
+
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        egui::Rgba::TRANSPARENT.to_array()
     }
 }
 

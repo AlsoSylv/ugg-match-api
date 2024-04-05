@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Deserialize Player Matches
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlayerMatchSummeries {
+pub struct PlayerMatchSummaries {
     pub data: Data,
 }
 
@@ -18,7 +18,7 @@ pub struct Data {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchPlayerMatchSummaries {
-    // The match summeries for that page
+    // The match summaries for that page
     pub match_summaries: Box<[MatchSummary]>,
 }
 
@@ -48,7 +48,8 @@ pub struct MatchSummary {
     pub role: i64,
     pub runes: Vec<i64>,
     pub sub_style: i64,
-    pub summoner_name: String,
+    pub riot_user_name: String,
+    pub riot_tag_line: String,
     pub summoner_spells: Vec<i64>,
     pub team_a: Vec<Team>,
     pub team_b: Vec<Team>,
@@ -63,7 +64,8 @@ pub struct Team {
     pub champion_id: i64,
     pub hard_carry: f64,
     pub role: i64,
-    pub summoner_name: String,
+    pub riot_user_name: String,
+    pub riot_tag_line: String,
     pub teamplay: f64,
 }
 
@@ -85,40 +87,6 @@ pub struct UpdateData {
 pub struct UpdatePlayerProfile {
     pub error_reason: Option<Box<str>>,
     pub success: bool,
-}
-
-/// Deserealize PlayerRanks
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlayerRank {
-    pub data: RankData,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RankData {
-    pub fetch_profile_ranks: FetchProfileRanks,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FetchProfileRanks {
-    pub rank_scores: Box<[RankScore]>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RankScore {
-    pub last_updated_at: Option<i64>,
-    pub losses: i64,
-    pub lp: i64,
-    pub promo_progress: Option<String>,
-    pub queue_type: String,
-    pub rank: String,
-    pub role: Option<String>,
-    pub season_id: i64,
-    pub tier: String,
-    pub wins: i64,
 }
 
 /// Deserialize Player Overview
@@ -150,17 +118,47 @@ pub struct PlayerInfo {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfilePlayerInfo {
-    pub profile_player_info: Option<ProfileInfo>,
+    pub fetch_profile_ranks: Option<FetchProfileRanks>,
+    pub profile_init_simple: Option<PlayerInfoWrapper>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerInfoWrapper {
+    pub last_modified: String,
+    pub player_info: ProfileInfo,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileInfo {
-    /// No player is near level There are currentonly only 6,300 icons as of September 27th, 2023
+    /// No player is near level There are currently only 6,300 icons as of September 27th, 2023
     pub icon_id: i16,
     /// No player is near level 32,767
     pub summoner_level: i16,
-    pub summoner_name: Box<str>,
+    pub riot_user_name: String,
+    pub riot_tag_line: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchProfileRanks {
+    pub rank_scores: Box<[RankScore]>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RankScore {
+    pub last_updated_at: Option<i64>,
+    pub losses: i64,
+    pub lp: i64,
+    pub promo_progress: Option<String>,
+    pub queue_type: String,
+    pub rank: String,
+    pub role: Option<String>,
+    pub season_id: i64,
+    pub tier: String,
+    pub wins: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -323,7 +321,9 @@ impl<'a> Iterator for PlayerProfileSuggestionsIter<'a> {
     type Item = &'a String;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.player_profile_suggestions.get(self.cursor).map(|suggestions| &suggestions.riot_user_name)
+        self.player_profile_suggestions
+            .get(self.cursor)
+            .map(|suggestions| &suggestions.riot_user_name)
     }
 }
 

@@ -2,39 +2,44 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::graphql::structs::PlayerInfoSuggestions;
 use crate::{
     graphql::structs::{
-        FetchMatch, FetchMatchSummaries, FetchProfilePlayerInfo, FetchProfileRanks,
-        GetOverallPlayerRanking, UpdatePlayerProfile,
+        FetchMatch, FetchMatchSummaries, GetOverallPlayerRanking, GetSummonerProfile,
+        UpdatePlayerProfile,
     },
     structs,
 };
-use crate::graphql::structs::PlayerInfoSuggestions;
 
 const BASE_URL: &str = "https://u.gg/api";
 
-const SEASON_ID: i32 = 21;
+// Season 13 = 21
+// Season 14 = 22
+const SEASON_ID: i32 = 22;
 
-const MATCH_SUMMERIES: &str = include_str!("../graphql/match_query.graphql");
+const MATCH_SUMMARIES: &str = include_str!("../graphql/match_query.graphql");
 
 pub async fn fetch_match_summaries(
     name: Arc<String>,
+    tag_line: &str,
     region_id: &'static str,
     role: Vec<u8>,
     page: i64,
     client: &reqwest::Client,
-) -> Result<structs::PlayerMatchSummeries, reqwest::Error> {
+) -> Result<structs::PlayerMatchSummaries, reqwest::Error> {
     request(
-        MATCH_SUMMERIES,
+        MATCH_SUMMARIES,
         FetchMatchSummaries {
             champion_id: Vec::new(),
             page,
             queue_type: Vec::new(),
-            duo_name: "".to_string(),
+            duo_riot_user_name: "",
+            duo_riot_tag_line: "",
             region_id,
             role,
             season_ids: vec![SEASON_ID],
-            summoner_name: name,
+            riot_user_name: name,
+            riot_tag_line: tag_line,
         },
         client,
         BASE_URL,
@@ -44,7 +49,7 @@ pub async fn fetch_match_summaries(
 
 const PLAYER_SUGGESTIONS: &str = include_str!("../graphql/player_suggestion_query.graphql");
 
-pub async fn player_suggestiosn(
+pub async fn player_suggestions(
     name: Arc<String>,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerSuggestions, reqwest::Error> {
@@ -79,25 +84,26 @@ pub async fn update_player(
     .await
 }
 
-const PROFILE_RANKS: &str = include_str!("../graphql/fetch_profile_rank_queries.graphql");
+// const PROFILE_RANKS: &str = include_str!("../graphql/fetch_profile_rank_queries.graphql");
 
-pub async fn profile_ranks(
-    name: Arc<String>,
-    client: &reqwest::Client,
-    region_id: &'static str,
-) -> Result<structs::PlayerRank, reqwest::Error> {
-    request(
-        PROFILE_RANKS,
-        FetchProfileRanks {
-            region_id,
-            summoner_name: name,
-            season_id: SEASON_ID,
-        },
-        client,
-        BASE_URL,
-    )
-    .await
-}
+// This has been merged with player info
+// pub async fn profile_ranks(
+//     name: Arc<String>,
+//     client: &reqwest::Client,
+//     region_id: &'static str,
+// ) -> Result<structs::PlayerRank, reqwest::Error> {
+//     request(
+//         PROFILE_RANKS,
+//         FetchProfileRanks {
+//             region_id,
+//             summoner_name: name,
+//             season_id: SEASON_ID,
+//         },
+//         client,
+//         BASE_URL,
+//     )
+//     .await
+// }
 
 const PLAYER_RANKING: &str = include_str!("../graphql/overall_player_ranking.graphql");
 
@@ -123,14 +129,17 @@ const PLAYER_INFO: &str = include_str!("../graphql/profile_player_info.graphql")
 
 pub async fn player_info(
     name: Arc<String>,
+    tag_line: Arc<String>,
     region_id: &'static str,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerInfo, reqwest::Error> {
     request(
         PLAYER_INFO,
-        FetchProfilePlayerInfo {
+        GetSummonerProfile {
             region_id,
-            summoner_name: name,
+            riot_user_name: name,
+            riot_tag_line: tag_line,
+            season_id: SEASON_ID,
         },
         client,
         BASE_URL,
