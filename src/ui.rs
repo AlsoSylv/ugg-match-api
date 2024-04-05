@@ -39,6 +39,7 @@ pub enum Payload {
     },
     UpdatePlayer {
         name: Arc<String>,
+        tag_line: Arc<String>,
         region_id: &'static str,
     },
     PlayerRanking {
@@ -70,6 +71,8 @@ pub enum Payload {
     },
 }
 
+// This is a library name, shut up
+//noinspection SpellCheckingInspection
 pub struct MyEguiApp {
     pub messenger: async_channel::Sender<Payload>,
     pub receiver: async_channel::Receiver<Results>,
@@ -192,6 +195,7 @@ impl MyEguiApp {
     fn update_player(&self) {
         self.send_message(Payload::UpdatePlayer {
             name: self.riot_user_name.clone(),
+            tag_line: self.riot_tag_line.clone(),
             region_id: self.data_dragon.region,
         });
     }
@@ -292,23 +296,35 @@ impl eframe::App for MyEguiApp {
                                             &self.riot_user_name,
                                             &self.riot_tag_line,
                                         );
-                                        ui.memory_mut(|mem| mem.close_popup());
                                     }
                                 }
                             });
 
-                            if search_bar.has_focus() {
+                            if search_bar.has_focus()
+                                && !self.active_player.is_empty()
+                                && !self
+                                    .player_suggestions
+                                    .data
+                                    .player_profile_suggestions
+                                    .is_empty()
+                            {
                                 ui.memory_mut(|mem| mem.open_popup(id));
                             }
 
-                            // We're not doing this right now
-                            // if search_bar.clicked()
-                            //     && !active_player.ends_with(' ')
-                            //     && !self.active_player.is_empty()
-                            // {
-                            //     self.riot_user_name = Arc::new(self.active_player.clone());
-                            //     self.update_matches(&self.riot_user_name);
-                            // }
+                            if search_bar.lost_focus() {
+                                ui.memory_mut(|mem| mem.open_popup(id));
+                            }
+
+                            if search_bar.clicked()
+                                && !self.active_player.ends_with(' ')
+                                && !self.active_player.is_empty()
+                                && self.active_player.contains("#")
+                            {
+                                let (name, tag) = self.active_player.split_once('#').unwrap();
+                                self.riot_user_name = Arc::new(name.to_owned());
+                                self.riot_tag_line = Arc::new(tag.to_owned());
+                                self.update_matches(&self.riot_user_name, &self.riot_tag_line);
+                            }
 
                             // We need to update suggestions
                             if search_bar.changed() {

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use crate::graphql::structs::PlayerInfoSuggestions;
 use crate::{
@@ -20,24 +21,24 @@ const SEASON_ID: i32 = 22;
 const MATCH_SUMMARIES: &str = include_str!("../graphql/match_query.graphql");
 
 pub async fn fetch_match_summaries(
-    name: Arc<String>,
+    name: &str,
     tag_line: &str,
-    region_id: &'static str,
-    role: Vec<u8>,
+    region_id: &str,
+    role: &[u8],
     page: i64,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerMatchSummaries, reqwest::Error> {
     request(
         MATCH_SUMMARIES,
         FetchMatchSummaries {
-            champion_id: Vec::new(),
+            champion_id: &[],
             page,
-            queue_type: Vec::new(),
+            queue_type: &[],
             duo_riot_user_name: "",
             duo_riot_tag_line: "",
             region_id,
             role,
-            season_ids: vec![SEASON_ID],
+            season_ids: &[SEASON_ID],
             riot_user_name: name,
             riot_tag_line: tag_line,
         },
@@ -68,15 +69,17 @@ pub async fn player_suggestions(
 const UPDATE_PLAYER: &str = include_str!("../graphql/update_profile_query.graphql");
 
 pub async fn update_player(
-    name: Arc<String>,
+    name: &str,
+    tag_line: &str,
     client: &reqwest::Client,
-    region_id: &'static str,
+    region_id: &str,
 ) -> Result<structs::UpdatePlayer, reqwest::Error> {
     request(
         UPDATE_PLAYER,
         UpdatePlayerProfile {
             region_id,
-            summoner_name: name,
+            riot_user_name: name,
+            riot_tag_line: tag_line,
         },
         client,
         BASE_URL,
@@ -170,12 +173,15 @@ pub async fn fetch_match(
     .await
 }
 
-async fn request<Vars: Serialize, Data: for<'de> Deserialize<'de>>(
+async fn request<Data>(
     query: &str,
-    variables: Vars,
+    variables: impl Serialize,
     client: &reqwest::Client,
     url: &str,
-) -> Result<Data, reqwest::Error> {
+) -> Result<Data, reqwest::Error>
+where
+    Data: DeserializeOwned,
+{
     let res = client
         .post(url)
         .json(&GQLQuery { variables, query })

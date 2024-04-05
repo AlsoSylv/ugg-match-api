@@ -60,12 +60,29 @@ impl SharedState {
 
 static SHARED_STATE: SharedState = SharedState::new();
 
-#[derive(Clone)]
 struct ThreadState {
-    ctx: eframe::egui::Context,
-    receiver: Receiver<Payload>,
-    sender: Sender<Results>,
-    client: reqwest::Client,
+    ctx: OnceLock<eframe::egui::Context>,
+    receiver: OnceLock<Receiver<Payload>>,
+    sender: OnceLock<Sender<Results>>,
+    client: OnceLock<reqwest::Client>,
+}
+
+impl ThreadState {
+    fn ctx(&self) -> &eframe::egui::Context {
+        self.ctx.get().unwrap()
+    }
+
+    fn receiver(&self) -> &Receiver<Payload> {
+        self.receiver.get().unwrap()
+    }
+
+    fn sender(&self) -> &Sender<Results> {
+        self.sender.get().unwrap()
+    }
+
+    fn client(&self) -> &reqwest::Client {
+        self.client.get().unwrap()
+    }
 }
 
 async fn message_sender(
@@ -76,6 +93,13 @@ async fn message_sender(
     thread_sender.send(message).await.unwrap();
     ctx.request_repaint();
 }
+
+static STATE: ThreadState = ThreadState {
+    ctx: OnceLock::new(),
+    receiver: OnceLock::new(),
+    sender: OnceLock::new(),
+    client: OnceLock::new(),
+};
 
 pub fn spawn_gui_shit(
     _ctx: &eframe::egui::Context,
@@ -88,21 +112,19 @@ pub fn spawn_gui_shit(
 
     let (gui_sender, thread_receiver) = async_channel::unbounded::<Payload>();
     let (thread_sender, gui_receiver) = async_channel::unbounded();
-    let client = reqwest::Client::new();
 
-    let state = ThreadState {
-        ctx: _ctx.clone(),
-        receiver: thread_receiver,
-        sender: thread_sender,
-        client,
-    };
+    STATE.receiver.get_or_init(|| thread_receiver);
+    STATE.ctx.get_or_init(|| _ctx.clone());
+    STATE.sender.get_or_init(|| thread_sender);
+    STATE.client.get_or_init(reqwest::Client::new);
+
 
     let runtime_loop = || {
-        let state = state.clone();
-        let shared_state = &SHARED_STATE;
-
         async move {
-            while let Ok(message) = state.receiver.recv().await {
+            let state = &STATE;
+            let shared_state = &SHARED_STATE;
+
+            while let Ok(message) = state.receiver().recv().await {
                 match message {
                     Payload::MatchSummaries {
                         name,
@@ -111,33 +133,46 @@ pub fn spawn_gui_shit(
                         region_id,
                         page,
                     } => {
+                        // This has to be at a higher scope
+                        let mut role: [u8; 1] = [0; 1];
+
+                        let roles = if let Some(roles) = roles {
+                            // Set the only field
+                            role[0] = roles;
+                            // Return as a slice
+                            role.as_slice()
+                        } else {
+                            // This is empty other
+                            &[]
+                        };
+
                         let request = networking::fetch_match_summaries(
-                            name,
+                            &name,
                             &tag_line,
                             region_id,
-                            roles.map_or_else(Vec::new, |role| vec![role]),
+                            roles,
                             page as i64,
-                            &state.client,
+                            state.client(),
                         )
                         .await
                         .map_err(Errors::Request);
 
-                        message_sender(Results::MatchSum(request), &state.ctx, &state.sender).await;
+                        message_sender(Results::MatchSum(request), state.ctx(), state.sender()).await;
                     }
-                    Payload::UpdatePlayer { name, region_id } => {
-                        let request = networking::update_player(name, &state.client, region_id)
+                    Payload::UpdatePlayer { name, tag_line, region_id } => {
+                        let request = networking::update_player(&name, &tag_line, state.client(), region_id)
                             .await
                             .map_err(Errors::Request);
 
-                        message_sender(Results::PlayerUpdate(request), &state.ctx, &state.sender)
+                        message_sender(Results::PlayerUpdate(request), state.ctx(), state.sender())
                             .await;
                     }
                     Payload::PlayerRanking { name, region_id } => {
-                        let request = networking::player_ranking(name, &state.client, region_id)
+                        let request = networking::player_ranking(name, state.client(), region_id)
                             .await
                             .map_err(Errors::Request);
 
-                        message_sender(Results::Ranking(request), &state.ctx, &state.sender).await;
+                        message_sender(Results::Ranking(request), state.ctx(), state.sender()).await;
                     }
                     Payload::PlayerInfo {
                         name,
@@ -146,14 +181,14 @@ pub fn spawn_gui_shit(
                         region_id,
                     } => {
                         let val =
-                            networking::player_info(name, tag_line, region_id, &state.client).await;
+                            networking::player_info(name, tag_line, region_id, state.client()).await;
 
                         if let Ok(info) = &val {
                             if let Some(info) = &info.data.profile_init_simple {
                                 let res = get_icon(
                                     info.player_info.icon_id,
                                     &shared_state.versions.get().unwrap()[version_index],
-                                    &state.client,
+                                    state.client(),
                                 )
                                 .await;
                                 match res {
@@ -172,7 +207,7 @@ pub fn spawn_gui_shit(
 
                                         reader.next_frame(&mut buf).unwrap();
 
-                                        let texture = state.ctx.load_texture(
+                                        let texture = state.ctx().load_texture(
                                             "icon",
                                             ColorImage::from_rgb([x, y], &buf),
                                             TextureOptions::LINEAR,
@@ -182,7 +217,7 @@ pub fn spawn_gui_shit(
                                     }
                                     Err(err) => {
                                         let wrapped = Results::PlayerIcon(Errors::Request(err));
-                                        message_sender(wrapped, &state.ctx, &state.sender).await;
+                                        message_sender(wrapped, state.ctx(), state.sender()).await;
                                     }
                                 }
                             }
@@ -190,14 +225,13 @@ pub fn spawn_gui_shit(
 
                         message_sender(
                             Results::PlayerInfo(val.map_err(Errors::Request)),
-                            &state.ctx,
-                            &state.sender,
+                            state.ctx(), state.sender()
                         )
                         .await;
                     }
                     Payload::GetVersions => {
                         let res = state
-                            .client
+                            .client()
                             .get("https://ddragon.leagueoflegends.com/api/versions.json")
                             .send()
                             .await;
@@ -214,23 +248,21 @@ pub fn spawn_gui_shit(
                             Err(err) => {
                                 message_sender(
                                     Results::Versions(Errors::Request(err)),
-                                    &state.ctx,
-                                    &state.sender,
+                                    state.ctx(), state.sender()
                                 )
                                 .await;
                             }
                         };
                     }
                     Payload::GetChampInfo { url } => {
-                        let res = state.client.get(url).send().await;
+                        let res = state.client().get(url).send().await;
 
                         let json = match res {
                             Ok(res) => res.json().await,
                             Err(err) => {
                                 message_sender(
                                     Results::ChampJson(Errors::Request(err)),
-                                    &state.ctx,
-                                    &state.sender,
+                                    state.ctx(), state.sender()
                                 )
                                 .await;
                                 continue;
@@ -241,8 +273,7 @@ pub fn spawn_gui_shit(
                             Err(err) => {
                                 message_sender(
                                     Results::ChampJson(Errors::Request(err)),
-                                    &state.ctx,
-                                    &state.sender,
+                                    state.ctx(), state.sender()
                                 )
                                 .await;
                                 continue;
@@ -257,14 +288,13 @@ pub fn spawn_gui_shit(
                         shared_state.champs.get_or_init(|| champs);
                     }
                     Payload::GetChampImage { url, id } => {
-                        let res = state.client.get(url).send().await;
+                        let res = state.client().get(url).send().await;
                         let res = match res {
                             Ok(res) => res,
                             Err(err) => {
                                 message_sender(
                                     Results::ChampImage(Errors::Request(err)),
-                                    &state.ctx,
-                                    &state.sender,
+                                    state.ctx(), state.sender()
                                 )
                                 .await;
                                 continue;
@@ -275,8 +305,7 @@ pub fn spawn_gui_shit(
                             Err(err) => {
                                 message_sender(
                                     Results::ChampImage(Errors::Request(err)),
-                                    &state.ctx,
-                                    &state.sender,
+                                    state.ctx(), state.sender()
                                 )
                                 .await;
                                 continue;
@@ -299,7 +328,7 @@ pub fn spawn_gui_shit(
                             .next_frame(&mut buf)
                             .expect("If the champ does not exist in the map, something is wrong");
 
-                        let texture = state.ctx.load_texture(
+                        let texture = state.ctx().load_texture(
                             "icon",
                             ColorImage::from_rgb([x, y], &buf),
                             TextureOptions::LINEAR,
@@ -318,18 +347,18 @@ pub fn spawn_gui_shit(
                             region_id,
                             &id.to_string(),
                             &version,
-                            &state.client,
+                            state.client(),
                         )
                         .await
                         .map(|json| (Box::new(json), id))
                         .map_err(Errors::Request);
-                        message_sender(Results::MatchDetails(res), &state.ctx, &state.sender).await;
+                        message_sender(Results::MatchDetails(res), state.ctx(), state.sender()).await;
                     }
                     Payload::GetPlayerSuggestions { name } => {
-                        let res = networking::player_suggestions(name, &state.client)
+                        let res = networking::player_suggestions(name, state.client())
                             .await
                             .map_err(Errors::Request);
-                        message_sender(Results::PlayerSuggestions(res), &state.ctx, &state.sender)
+                        message_sender(Results::PlayerSuggestions(res), state.ctx(), state.sender())
                             .await;
                     }
                 };

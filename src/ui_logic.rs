@@ -87,7 +87,7 @@ impl ui::MyEguiApp {
                     Ok(updated) => {
                         let data = updated.data.update_player_profile;
                         if data.success {
-                            self.update_matches(&self.riot_user_name, &self.riot_user_name);
+                            self.update_matches(&self.riot_user_name, &self.riot_tag_line);
                         } else {
                             dbg!("{:?}", data.error_reason);
                         }

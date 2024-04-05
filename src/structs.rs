@@ -311,30 +311,3 @@ pub struct PlayerInfoSuggestion {
     pub riot_user_name: String,
     pub riot_tag_line: String,
 }
-
-pub struct PlayerProfileSuggestionsIter<'a> {
-    pub player_profile_suggestions: &'a [PlayerInfoSuggestion],
-    cursor: usize,
-}
-
-impl<'a> Iterator for PlayerProfileSuggestionsIter<'a> {
-    type Item = &'a String;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.player_profile_suggestions
-            .get(self.cursor)
-            .map(|suggestions| &suggestions.riot_user_name)
-    }
-}
-
-impl<'a> IntoIterator for &'a PlayerProfileSuggestions {
-    type Item = &'a String;
-    type IntoIter = PlayerProfileSuggestionsIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        PlayerProfileSuggestionsIter {
-            player_profile_suggestions: &self.player_profile_suggestions,
-            cursor: 0,
-        }
-    }
-}

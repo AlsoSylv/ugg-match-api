@@ -7,26 +7,27 @@ pub struct PlayerInfoSuggestions {
     pub region_id: &'static str,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchMatchSummaries<'s> {
-    pub riot_user_name: Arc<String>,
+    pub riot_user_name: &'s str,
     pub riot_tag_line: &'s str,
     pub duo_riot_user_name: &'s str,
     pub duo_riot_tag_line: &'s str,
-    pub queue_type: Vec<i64>,
-    pub region_id: &'static str,
-    pub role: Vec<u8>,
-    pub season_ids: Vec<i32>,
-    pub champion_id: Vec<i64>,
+    pub queue_type: &'s [i64],
+    pub region_id: &'s str,
+    pub role: &'s [u8],
+    pub season_ids: &'s [i32],
+    pub champion_id: &'s [i16],
     pub page: i64,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UpdatePlayerProfile {
-    pub region_id: &'static str,
-    pub summoner_name: Arc<String>,
+pub struct UpdatePlayerProfile<'s> {
+    pub region_id: &'s str,
+    pub riot_user_name: &'s str,
+    pub riot_tag_line: &'s str,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
