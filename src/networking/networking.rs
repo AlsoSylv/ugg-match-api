@@ -3,10 +3,10 @@ use std::sync::Arc;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::graphql::structs::PlayerInfoSuggestions;
+use crate::graphql::structs::{GetOverallPlayerRanking, PlayerInfoSuggestions};
 use crate::{
     graphql::structs::{
-        FetchMatch, FetchMatchSummaries, GetOverallPlayerRanking, GetSummonerProfile,
+        FetchMatch, FetchMatchSummaries, GetSummonerProfile,
         UpdatePlayerProfile,
     },
     structs,
@@ -16,7 +16,7 @@ const BASE_URL: &str = "https://u.gg/api";
 
 // Season 13 = 21
 // Season 14 = 22
-const SEASON_ID: i32 = 22;
+const SEASON_ID: u8 = 22;
 
 const MATCH_SUMMARIES: &str = include_str!("../graphql/match_query.graphql");
 
@@ -25,7 +25,7 @@ pub async fn fetch_match_summaries(
     tag_line: &str,
     region_id: &str,
     role: &[u8],
-    page: i64,
+    page: u8,
     client: &reqwest::Client,
 ) -> Result<structs::PlayerMatchSummaries, reqwest::Error> {
     request(
@@ -87,31 +87,11 @@ pub async fn update_player(
     .await
 }
 
-// const PROFILE_RANKS: &str = include_str!("../graphql/fetch_profile_rank_queries.graphql");
-
-// This has been merged with player info
-// pub async fn profile_ranks(
-//     name: Arc<String>,
-//     client: &reqwest::Client,
-//     region_id: &'static str,
-// ) -> Result<structs::PlayerRank, reqwest::Error> {
-//     request(
-//         PROFILE_RANKS,
-//         FetchProfileRanks {
-//             region_id,
-//             summoner_name: name,
-//             season_id: SEASON_ID,
-//         },
-//         client,
-//         BASE_URL,
-//     )
-//     .await
-// }
-
 const PLAYER_RANKING: &str = include_str!("../graphql/overall_player_ranking.graphql");
 
 pub async fn player_ranking(
-    name: Arc<String>,
+    riot_user_name: &str,
+    riot_tag_line: &str,
     client: &reqwest::Client,
     region_id: &'static str,
 ) -> Result<structs::PlayerRanking, reqwest::Error> {
@@ -119,13 +99,14 @@ pub async fn player_ranking(
         PLAYER_RANKING,
         GetOverallPlayerRanking {
             region_id,
-            summoner_name: name,
+            riot_user_name,
+            riot_tag_line,
             queue_type: 420,
         },
         client,
         BASE_URL,
     )
-    .await
+        .await
 }
 
 const PLAYER_INFO: &str = include_str!("../graphql/profile_player_info.graphql");
@@ -153,8 +134,9 @@ pub async fn player_info(
 const FETCH_MATCH: &str = include_str!("../graphql/fetch_match.graphql");
 
 pub async fn fetch_match(
-    name: Arc<String>,
-    region_id: &'static str,
+    name: &str,
+    tag_line: &str,
+    region_id: &str,
     id: &str,
     version: &str,
     client: &reqwest::Client,
@@ -163,7 +145,8 @@ pub async fn fetch_match(
         FETCH_MATCH,
         FetchMatch {
             region_id,
-            summoner_name: name,
+            riot_user_name: name,
+            riot_tag_line: tag_line,
             match_id: id,
             version,
         },

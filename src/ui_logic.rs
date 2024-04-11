@@ -1,9 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use eframe::egui::TextBuffer;
-
 use crate::{
-    structs::RankScore,
     ui::{self, Champ, Payload, Results},
 };
 
@@ -32,10 +29,11 @@ impl ui::MyEguiApp {
             region_id: self.data_dragon.region,
             page: self.page,
         });
-        // self.send_message(Payload::PlayerRanks {
-        //     name: name.clone(),
-        //     region_id: self.data_dragon.region,
-        // });
+        self.send_message(Payload::PlayerRanking {
+            name: name.clone(),
+            tag_line: tag_line.clone(),
+            region_id: self.data_dragon.region,
+        });
         // self.send_message(Payload::PlayerRanking {
         //     name: name.clone(),
         //     region_id: self.data_dragon.region,
@@ -59,7 +57,7 @@ impl ui::MyEguiApp {
                         summaries.iter_mut().for_each(|summary| {
                             if self.player_data.match_data_map.get(&summary.match_id).is_none() {
                                 self.player_data.match_data_map.insert(summary.match_id, None);
-                                // self.send_message(Payload::GetMatchDetails { name: self.riot_user_name.clone(), version: summary.version.take(), id: summary.match_id, region_id: self.data_dragon.region });
+                                self.send_message(Payload::GetMatchDetails { name: self.riot_user_name.clone(), tag_line: self.riot_tag_line.clone(), version: summary.version.clone(), id: summary.match_id, region_id: self.data_dragon.region });
                             }
 
                             let champ = &champs[&summary.champion_id];
@@ -108,25 +106,23 @@ impl ui::MyEguiApp {
                 Results::PlayerInfo(info) => match info {
                     Ok(data) => {
                         let info = data.data.profile_init_simple.unwrap();
-                        let rank = data.data.fetch_profile_ranks.unwrap();
+                        let rank = data.data.fetch_profile_ranks;
                         if info.player_info.riot_user_name.as_str() == self.riot_user_name.as_str()
                             && info.player_info.riot_tag_line.as_str()
                                 == self.riot_tag_line.as_str()
                         {
                             self.player_data.icon_id = info.player_info.icon_id;
-                            let data: Vec<RankScore> = rank
-                                .rank_scores
-                                .into_vec()
-                                .into_iter()
-                                .filter_map(|val| {
-                                    if val.queue_type.is_empty() {
-                                        None
-                                    } else {
-                                        Some(val)
-                                    }
-                                })
-                                .collect();
-                            self.player_data.rank_scores = Some(data.into());
+                            let data: Option<Box<[_]>> = rank
+                                .map(|rank| {
+                                    rank.rank_scores.into_vec().into_iter().filter_map(|val| {
+                                        if val.queue_type.is_empty() {
+                                            None
+                                        } else {
+                                            Some(val)
+                                        }
+                                    }).collect()
+                                });
+                            self.player_data.rank_scores = data;
                         }
                     }
                     Err(err) => {

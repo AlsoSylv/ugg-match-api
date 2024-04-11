@@ -1,13 +1,15 @@
-query Match($summonerName: String!, $regionId: String!, $matchId: String!, $version: String!) {
+query Match($riotUserName: String!, $riotTagLine: String!, $regionId: String!, $matchId: String!, $version: String!) {
     match(
         matchId: $matchId
         regionId: $regionId
-        summonerName: $summonerName
+        riotUserName: $riotUserName
+        riotTagLine: $riotTagLine
         version: $version
     ) {
         winningTeam
         performanceScore {
-            summonerName
+            riotUserName
+            riotTagLine
             teamplay
             hardCarry
         }
@@ -44,14 +46,16 @@ query Match($summonerName: String!, $regionId: String!, $matchId: String!, $vers
                 championId
                 damage
                 role
-                summonerName
+                riotUserName
+                riotTagLine
                 teamId
             }
             teamB {
                 championId
                 damage
                 role
-                summonerName
+                riotUserName
+                riotTagLine
                 teamId
             }
         }

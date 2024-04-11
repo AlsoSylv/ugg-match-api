@@ -20,12 +20,12 @@ pub enum Results {
     PlayerUpdate(Result<structs::UpdatePlayer, Errors>),
     Ranking(Result<structs::PlayerRanking, Errors>),
     PlayerInfo(Result<structs::PlayerInfo, Errors>),
+    MatchDetails(Result<(Box<GetMatch>, i64), Errors>),
+    PlayerSuggestions(Result<PlayerSuggestions, Errors>),
     PlayerIcon(Errors),
     Versions(Errors),
     ChampJson(Errors),
     ChampImage(Errors),
-    MatchDetails(Result<(Box<GetMatch>, i64), Errors>),
-    PlayerSuggestions(Result<PlayerSuggestions, Errors>),
 }
 
 #[derive(Debug)]
@@ -44,6 +44,7 @@ pub enum Payload {
     },
     PlayerRanking {
         name: Arc<String>,
+        tag_line: Arc<String>,
         region_id: &'static str,
     },
     PlayerInfo {
@@ -62,6 +63,7 @@ pub enum Payload {
     },
     GetMatchDetails {
         name: Arc<String>,
+        tag_line: Arc<String>,
         version: String,
         id: i64,
         region_id: &'static str,
@@ -318,7 +320,7 @@ impl eframe::App for MyEguiApp {
                             if search_bar.clicked()
                                 && !self.active_player.ends_with(' ')
                                 && !self.active_player.is_empty()
-                                && self.active_player.contains("#")
+                                && self.active_player.contains('#')
                             {
                                 let (name, tag) = self.active_player.split_once('#').unwrap();
                                 self.riot_user_name = Arc::new(name.to_owned());
@@ -553,7 +555,7 @@ impl eframe::App for MyEguiApp {
                                                         player_data(
                                                             ui,
                                                             player.role,
-                                                            &player.summoner_name,
+                                                            &player.riot_user_name,
                                                         );
                                                     }
                                                 });
@@ -565,7 +567,7 @@ impl eframe::App for MyEguiApp {
                                                         player_data(
                                                             ui,
                                                             player.role,
-                                                            &player.summoner_name,
+                                                            &player.riot_user_name,
                                                         );
                                                     }
                                                 });

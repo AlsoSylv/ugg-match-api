@@ -1,5 +1,5 @@
-query GetOverallPlayerRanking($queueType: Int, $summonerName: String, $regionId: String) {
-    overallRanking(queueType: $queueType, summonerName: $summonerName, regionId: $regionId) {
+query GetOverallPlayerRanking($queueType: Int, $riotUserName: String!, $riotTagLine: String!, $regionId: String) {
+    overallRanking(regionId: $regionId, riotUserName: $riotUserName, riotTagLine: $riotTagLine, queueType: $queueType) {
         overallRanking
         totalPlayerCount
     }

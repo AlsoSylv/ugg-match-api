@@ -256,12 +256,13 @@ pub struct FullMatchSummary {
     pub primary_style: i64,
     pub ps_hard_carry: i64,
     pub ps_team_play: i64,
-    pub queue_type: String,
+    pub queue_type: Option<String>,
     pub region_id: String,
-    pub role: i64,
+    pub role: Option<i64>,
     pub runes: Vec<i64>,
     pub sub_style: i64,
-    pub summoner_name: String,
+    pub riot_user_name: Option<String>,
+    pub riot_tag_line: Option<String>,
     pub summoner_spells: Vec<i64>,
     pub team_a: Box<[MatchTeam]>,
     pub team_b: Box<[MatchTeam]>,
@@ -274,7 +275,8 @@ pub struct FullMatchSummary {
 #[serde(rename_all = "camelCase")]
 pub struct PerformanceScore {
     pub hard_carry: i64,
-    pub summoner_name: String,
+    pub riot_user_name: Option<String>,
+    pub riot_tag_line: Option<String>,
     pub teamplay: i64,
 }
 
@@ -284,7 +286,8 @@ pub struct MatchTeam {
     pub champion_id: i64,
     pub damage: i64,
     pub role: u8,
-    pub summoner_name: String,
+    pub riot_user_name: String,
+    pub riot_tag_line: String,
     pub team_id: i64,
 }
 
